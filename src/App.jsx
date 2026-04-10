@@ -251,12 +251,18 @@ export default function App(){
     const a=document.createElement("a");a.href=url;a.download=`rodizio_${MONTHS[m]}_${y}.html`;a.click();URL.revokeObjectURL(url);
   }
 
-  async function saveBooking(){
+  // converte yyyy-mm-dd → dd/mm/yyyy e vice-versa
+  const toISO=d=>d?d.split("/").reverse().join("-"):"";
+  const toBR=d=>d?d.split("-").reverse().join("/"):"";
+  // today no formato ISO para comparar com booking_date salvo no banco
+  const todayISO=new Date().toISOString().split("T")[0];
+
+  async function saveBooking(notes,clearNotes){
     if(!bkForm.room_id||!bkForm.specialist_name||!bkForm.booking_date){showToast("Preencha todos os campos.","error");return;}
     const room=rooms.find(r=>r.id==bkForm.room_id);
     const conflict=bookings.find(b=>b.room_id==bkForm.room_id&&b.booking_date===bkForm.booking_date&&!(bkForm.end_time<=b.start_time||bkForm.start_time>=b.end_time));
     if(conflict){showToast(`Conflito: ${conflict.specialist_name} (${conflict.start_time}–${conflict.end_time}).`,"error");return;}
-    try{await sb("meeting_bookings","POST",{...bkForm,room_id:parseInt(bkForm.room_id),room_name:room?.name||"",booked_by:userName});showToast("Reserva criada!");setBkForm({room_id:"",specialist_name:"",booking_date:"",start_time:"09:00",end_time:"10:00",notes:""});const bk=await sb("meeting_bookings?order=booking_date,start_time");if(bk)setBookings(bk);}
+    try{await sb("meeting_bookings","POST",{...bkForm,notes:notes||"",room_id:parseInt(bkForm.room_id),room_name:room?.name||"",booked_by:userName});showToast("Reserva criada!");setBkForm({room_id:"",specialist_name:"",booking_date:"",start_time:"09:00",end_time:"10:00"});clearNotes&&clearNotes();const bk=await sb("meeting_bookings?order=booking_date,start_time");if(bk)setBookings(bk);}
     catch{showToast("Erro.","error");}
   }
   async function deleteBooking(id){if(!confirm("Cancelar?"))return;try{await sb(`meeting_bookings?id=eq.${id}`,"DELETE");const bk=await sb("meeting_bookings?order=booking_date,start_time");if(bk)setBookings(bk);}catch{}}
@@ -383,7 +389,7 @@ export default function App(){
                   <button style={{padding:"3px 10px",borderRadius:8,border:"none",background:isPaused?"#EDE9FE":"#f3f4f6",cursor:"pointer",fontSize:11,fontWeight:600,color:isPaused?"#7C3AED":"#888"}} title="Pausar" onClick={()=>{if(!isPaused){setMTxt("");setModal({type:"pausar",spec:c});}else setPaused(c,false);}}>⏸ Pausa</button>
                   <button style={{padding:"3px 10px",borderRadius:8,border:"none",background:"#f3f4f6",cursor:"pointer",fontSize:11,fontWeight:600,color:"#888"}} title="Nota" onClick={()=>{setMTxt(c.note||"");setModal({type:"nota",spec:c});}}>📝 Nota</button>
                   <span style={{padding:"3px 10px",borderRadius:8,fontSize:11,fontWeight:600,background:credits>0?"#FEF3C7":"#f3f4f6",color:credits>0?"#B45309":"#aaa",cursor:"pointer"}} onClick={()=>addInd(qId,c.id)} title="Adicionar indicação">📌 {credits}</span>
-                  <span style={{padding:"3px 10px",borderRadius:8,fontSize:11,fontWeight:600,background:"#D1FAE5",color:"#10B981",cursor:"pointer"}} title="Adicionar cliente presencial" onClick={()=>setModal({type:"manual",spec:c,qId})}>+1 Presencial</span>
+                  <span style={{padding:"3px 10px",borderRadius:8,fontSize:11,fontWeight:600,background:"#D1FAE5",color:"#10B981",cursor:"pointer"}} title="Adicionar cliente avulso" onClick={()=>setModal({type:"manual",spec:c,qId})}>+1 Avulso</span>
                 </div>
               </div>
             );
@@ -471,6 +477,8 @@ export default function App(){
     );
   }
 
+  const [bkNotes,setBkNotes]=useState("");
+
   function SalasTab(){
     return(
       <div>
@@ -487,19 +495,25 @@ export default function App(){
                 <option value="">Selecione...</option>{specs.map(s=><option key={s.id} value={s.name}>{s.name}</option>)}
               </select>
             </div>
-            <div><div style={{fontSize:12,fontWeight:600,color:"#555",marginBottom:4}}>Data</div><input type="date" style={C.inp} value={bkForm.booking_date} onChange={e=>setBkForm(p=>({...p,booking_date:e.target.value}))}/></div>
+            <div><div style={{fontSize:12,fontWeight:600,color:"#555",marginBottom:4}}>Data</div>
+              <input type="date" style={C.inp} value={bkForm.booking_date} onChange={e=>setBkForm(p=>({...p,booking_date:e.target.value}))}/>
+              {bkForm.booking_date&&<div style={{fontSize:11,color:"#888",marginTop:3}}>📅 {toBR(bkForm.booking_date)}</div>}
+            </div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
               <div><div style={{fontSize:12,fontWeight:600,color:"#555",marginBottom:4}}>Início</div><input type="time" style={C.inp} value={bkForm.start_time} onChange={e=>setBkForm(p=>({...p,start_time:e.target.value}))}/></div>
               <div><div style={{fontSize:12,fontWeight:600,color:"#555",marginBottom:4}}>Fim</div><input type="time" style={C.inp} value={bkForm.end_time} onChange={e=>setBkForm(p=>({...p,end_time:e.target.value}))}/></div>
             </div>
           </div>
-          <div style={{marginBottom:12}}><div style={{fontSize:12,fontWeight:600,color:"#555",marginBottom:4}}>Observação</div><input style={C.inp} placeholder="Ex: Reunião de feedback" value={bkForm.notes} onChange={e=>setBkForm(p=>({...p,notes:e.target.value}))}/></div>
-          <button style={C.btnP} onClick={saveBooking}>Reservar sala</button>
+          <div style={{marginBottom:12}}>
+            <div style={{fontSize:12,fontWeight:600,color:"#555",marginBottom:4}}>Observação</div>
+            <input style={C.inp} placeholder="Ex: Reunião de feedback" value={bkNotes} onChange={e=>setBkNotes(e.target.value)}/>
+          </div>
+          <button style={C.btnP} onClick={()=>saveBooking(bkNotes,()=>setBkNotes(""))}>Reservar sala</button>
         </div>
-        <div style={{fontWeight:700,fontSize:14,margin:"4px 0 10px"}}>📅 Salas hoje — {today}</div>
+        <div style={{fontWeight:700,fontSize:14,margin:"4px 0 10px"}}>📅 Salas hoje — {toBR(todayISO)}</div>
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(260px,1fr))",gap:10,marginBottom:16}}>
           {rooms.map((room,ri)=>{
-            const rb=bookings.filter(b=>b.room_id===room.id&&b.booking_date===today).sort((a,b)=>a.start_time.localeCompare(b.start_time));
+            const rb=bookings.filter(b=>b.room_id===room.id&&b.booking_date===todayISO).sort((a,b)=>a.start_time.localeCompare(b.start_time));
             const col=RCOLS[ri%RCOLS.length];
             return(<div key={room.id} style={{...C.card,borderTop:`4px solid ${col}`,marginBottom:0}}>
               <div style={{fontWeight:700,fontSize:14,color:col,marginBottom:10}}>{room.name}</div>
@@ -515,12 +529,12 @@ export default function App(){
         </div>
         <div style={{fontWeight:700,fontSize:14,marginBottom:10}}>📋 Próximas reservas</div>
         <div style={C.card}>
-          {!bookings.filter(b=>b.booking_date>=today).length&&<div style={{fontSize:13,color:"#888",textAlign:"center",padding:"1rem"}}>Nenhuma reserva.</div>}
-          {bookings.filter(b=>b.booking_date>=today).map((b,i,arr)=>{
+          {!bookings.filter(b=>b.booking_date>=todayISO).length&&<div style={{fontSize:13,color:"#888",textAlign:"center",padding:"1rem"}}>Nenhuma reserva.</div>}
+          {bookings.filter(b=>b.booking_date>=todayISO).map((b,i,arr)=>{
             const ri=rooms.findIndex(r=>r.id===b.room_id),col=RCOLS[ri>=0?ri%RCOLS.length:0];
             return(<div key={b.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderBottom:i<arr.length-1?"1px solid #f3f4f6":"none"}}>
               <div style={{width:8,height:8,borderRadius:"50%",background:col,flexShrink:0}}/>
-              <div style={{flex:1}}><span style={{fontWeight:600,fontSize:13}}>{b.specialist_name}</span><span style={{fontSize:12,color:"#888",marginLeft:8}}>{b.room_name} · {b.booking_date} · {b.start_time}–{b.end_time}</span></div>
+              <div style={{flex:1}}><span style={{fontWeight:600,fontSize:13}}>{b.specialist_name}</span><span style={{fontSize:12,color:"#888",marginLeft:8}}>{b.room_name} · {toBR(b.booking_date)} · {b.start_time}–{b.end_time}</span></div>
               {(b.booked_by===userName||adminOk)&&<button style={{background:"#FEE2E2",border:"none",borderRadius:8,padding:"4px 8px",cursor:"pointer",fontSize:12,color:"#EF4444"}} onClick={()=>deleteBooking(b.id)}>✕</button>}
             </div>);
           })}
@@ -668,7 +682,7 @@ export default function App(){
 
       {modal&&(
         <div style={{background:"#fff",borderRadius:16,padding:"1.5rem",border:"1px solid #e5e7eb",marginBottom:16,boxShadow:"0 4px 24px #7C3AED20"}}>
-          {modal.type==="manual"&&(<><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}><span style={{fontWeight:700,fontSize:15}}>+1 Cliente presencial — {modal.spec.name}</span><button style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"#aaa"}} onClick={()=>setModal(null)}>×</button></div><div style={{fontSize:13,color:"#555",marginBottom:8}}>Informe o motivo (ex: cliente pediu pela especialista)</div><input style={C.inp} placeholder="Motivo obrigatório" value={mTxt} onChange={e=>setMTxt(e.target.value)} autoFocus onKeyDown={e=>e.key==="Enter"&&mTxt.trim()&&(addManual(modal.qId,modal.spec.id,mTxt),setModal(null),setMTxt(""))}/><div style={{display:"flex",gap:8,marginTop:12}}><button style={{...C.btnP,background:"#10B981"}} onClick={()=>{if(!mTxt.trim()){showToast("Informe o motivo","error");return;}addManual(modal.qId,modal.spec.id,mTxt);setModal(null);setMTxt("");}}>Confirmar</button><button style={C.btnS} onClick={()=>{setModal(null);setMTxt("");}}>Cancelar</button></div></>)}
+          {modal.type==="manual"&&(<><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}><span style={{fontWeight:700,fontSize:15}}>+1 Avulso — {modal.spec.name}</span><button style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"#aaa"}} onClick={()=>setModal(null)}>×</button></div><div style={{fontSize:13,color:"#555",marginBottom:8}}>Informe o motivo (ex: cliente presencial, retorno, indicação gerencial)</div><input style={C.inp} placeholder="Motivo obrigatório" value={mTxt} onChange={e=>setMTxt(e.target.value)} autoFocus onKeyDown={e=>e.key==="Enter"&&mTxt.trim()&&(addManual(modal.qId,modal.spec.id,mTxt),setModal(null),setMTxt(""))}/><div style={{display:"flex",gap:8,marginTop:12}}><button style={{...C.btnP,background:"#10B981"}} onClick={()=>{if(!mTxt.trim()){showToast("Informe o motivo","error");return;}addManual(modal.qId,modal.spec.id,mTxt);setModal(null);setMTxt("");}}>Confirmar</button><button style={C.btnS} onClick={()=>{setModal(null);setMTxt("");}}>Cancelar</button></div></>)}
           {modal.type==="nota"&&(<><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}><span style={{fontWeight:700,fontSize:15}}>📝 Nota — {modal.spec.name}</span><button style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"#aaa"}} onClick={()=>setModal(null)}>×</button></div><textarea rows={3} style={{...C.inp,resize:"none",fontFamily:f}} value={mTxt} onChange={e=>setMTxt(e.target.value)} autoFocus/><div style={{display:"flex",gap:8,marginTop:12}}><button style={C.btnP} onClick={()=>{saveNote(modal.spec,mTxt);setModal(null);}}>Salvar</button><button style={C.btnS} onClick={()=>setModal(null)}>Cancelar</button></div></>)}
           {modal.type==="vacation"&&(<><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}><span style={{fontWeight:700,fontSize:15}}>🌴 Férias — {modal.spec.name}</span><button style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"#aaa"}} onClick={()=>setModal(null)}>×</button></div><input style={C.inp} placeholder="Motivo / data de retorno" value={mTxt} onChange={e=>setMTxt(e.target.value)} autoFocus/><div style={{display:"flex",gap:8,marginTop:12}}><button style={{...C.btnP,background:"#10B981"}} onClick={()=>{setVacation(modal.spec,true,mTxt);setModal(null);}}>Confirmar</button><button style={C.btnS} onClick={()=>setModal(null)}>Cancelar</button></div></>)}
           {modal.type==="pausar"&&(<><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}><span style={{fontWeight:700,fontSize:15}}>⏸ Pausar — {modal.spec.name}</span><button style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"#aaa"}} onClick={()=>setModal(null)}>×</button></div><input style={C.inp} placeholder="Motivo da pausa" value={mTxt} onChange={e=>setMTxt(e.target.value)} autoFocus/><div style={{display:"flex",gap:8,marginTop:12}}><button style={C.btnP} onClick={()=>{setPaused(modal.spec,true,mTxt);setModal(null);}}>Confirmar</button><button style={C.btnS} onClick={()=>setModal(null)}>Cancelar</button></div></>)}
