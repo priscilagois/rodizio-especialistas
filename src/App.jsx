@@ -357,29 +357,33 @@ export default function App(){
             const credits=c.ind?.[qId]||0,tot=totalOf(c,qId);
             const prev=prevTotal(c.name,qId);
             return(
-              <div key={c.id} style={{display:"flex",alignItems:"center",gap:8,padding:"7px 6px",borderBottom:i<allInQ.length-1?"1px solid #f3f4f6":"none",opacity:off?0.45:1}}>
-                <div style={{width:30,height:30,borderRadius:"50%",background:off?"#e5e7eb":q.light,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,color:off?"#999":q.color,flexShrink:0}}>{initials(c.name)}</div>
-                <div style={{flex:1,minWidth:0}}>
-                  <div style={{fontSize:13,fontWeight:600,display:"flex",alignItems:"center",gap:4}}>
-                    <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.name}</span>
-                    {isVac&&<span title="Férias">🌴</span>}{isPaused&&<span title="Pausado">⏸</span>}{c.selecao&&<span title="Seleção especial">⭐</span>}
+              <div key={c.id} style={{padding:"8px 6px",borderBottom:i<allInQ.length-1?"1px solid #f3f4f6":"none",opacity:off?0.45:1}}>
+                {/* Linha 1: avatar + nome + status + contador */}
+                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:5}}>
+                  <div style={{width:28,height:28,borderRadius:"50%",background:off?"#e5e7eb":q.light,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,color:off?"#999":q.color,flexShrink:0}}>{initials(c.name)}</div>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontSize:13,fontWeight:700,display:"flex",alignItems:"center",gap:4,flexWrap:"wrap"}}>
+                      <span>{c.name}</span>
+                      {isVac&&<span title="Férias" style={{fontSize:12}}>🌴</span>}
+                      {isPaused&&<span title="Pausado" style={{fontSize:12}}>⏸</span>}
+                      {c.selecao&&<span title="Seleção especial" style={{fontSize:12}}>⭐</span>}
+                    </div>
+                    {c.note&&<div style={{fontSize:11,color:"#F59E0B"}}>{c.note}</div>}
+                    {prev>0&&tot===0&&<div style={{fontSize:10,color:"#aaa"}}>ontem: {prev}</div>}
                   </div>
-                  {c.note&&<div style={{fontSize:11,color:"#F59E0B"}}>{c.note}</div>}
-                  {prev>0&&tot===0&&<div style={{fontSize:10,color:"#aaa"}}>ontem: {prev}</div>}
-                </div>
-                <div style={{display:"flex",gap:4,alignItems:"center",flexShrink:0}}>
                   {adminOk
-                    ?<span style={{padding:"2px 8px",borderRadius:20,fontSize:11,fontWeight:700,background:q.light,color:q.color,cursor:"pointer",border:`1px dashed ${q.color}`}} title="Editar contador" onClick={()=>setEditCount({specId:c.id,qId,val:String(tot)})}>{tot} ✏️</span>
-                    :<span style={{padding:"2px 8px",borderRadius:20,fontSize:11,fontWeight:700,background:q.light,color:q.color}}>{tot}</span>
+                    ?<span style={{padding:"2px 10px",borderRadius:20,fontSize:12,fontWeight:800,background:q.light,color:q.color,cursor:"pointer",border:`1px dashed ${q.color}`,flexShrink:0}} title="Editar contador" onClick={()=>setEditCount({specId:c.id,qId,val:String(tot)})}>{tot} ✏️</span>
+                    :<span style={{padding:"2px 10px",borderRadius:20,fontSize:12,fontWeight:800,background:q.light,color:q.color,flexShrink:0}}>{tot}</span>
                   }
-                  <span style={{padding:"2px 8px",borderRadius:20,fontSize:11,fontWeight:700,background:credits>0?"#FEF3C7":"#f3f4f6",color:credits>0?"#B45309":"#aaa",cursor:"pointer"}} onClick={()=>addInd(qId,c.id)} title="Adicionar indicação">📌{credits}</span>
-                  <span style={{padding:"2px 8px",borderRadius:20,fontSize:11,fontWeight:700,background:"#D1FAE5",color:"#10B981",cursor:"pointer"}} title="Adicionar cliente presencial" onClick={()=>setModal({type:"manual",spec:c,qId})}>+1</span>
                 </div>
-                <div style={{display:"flex",gap:3,flexShrink:0}}>
-                  <button style={{width:26,height:26,borderRadius:8,border:"none",background:c.selecao?"#FEF3C7":"#f3f4f6",cursor:"pointer",fontSize:12}} title="Seleção especial" onClick={()=>toggleSel(c)}>⭐</button>
-                  <button style={{width:26,height:26,borderRadius:8,border:"none",background:isVac?"#D1FAE5":"#f3f4f6",cursor:"pointer",fontSize:12}} title="Férias" onClick={()=>{if(!isVac){setMTxt("");setModal({type:"vacation",spec:c});}else setVacation(c,false);}}>🌴</button>
-                  <button style={{width:26,height:26,borderRadius:8,border:"none",background:isPaused?"#EDE9FE":"#f3f4f6",cursor:"pointer",fontSize:12}} title="Pausar" onClick={()=>{if(!isPaused){setMTxt("");setModal({type:"pausar",spec:c});}else setPaused(c,false);}}>⏸</button>
-                  <button style={{width:26,height:26,borderRadius:8,border:"none",background:"#f3f4f6",cursor:"pointer",fontSize:12}} title="Nota" onClick={()=>{setMTxt(c.note||"");setModal({type:"nota",spec:c});}}>📝</button>
+                {/* Linha 2: ações */}
+                <div style={{display:"flex",gap:4,alignItems:"center",paddingLeft:36,flexWrap:"wrap"}}>
+                  <button style={{padding:"3px 10px",borderRadius:8,border:"none",background:c.selecao?"#FEF3C7":"#f3f4f6",cursor:"pointer",fontSize:11,fontWeight:600,color:c.selecao?"#B45309":"#888"}} title="Seleção especial" onClick={()=>toggleSel(c)}>⭐ Seleção</button>
+                  <button style={{padding:"3px 10px",borderRadius:8,border:"none",background:isVac?"#D1FAE5":"#f3f4f6",cursor:"pointer",fontSize:11,fontWeight:600,color:isVac?"#059669":"#888"}} title="Férias" onClick={()=>{if(!isVac){setMTxt("");setModal({type:"vacation",spec:c});}else setVacation(c,false);}}>🌴 Férias</button>
+                  <button style={{padding:"3px 10px",borderRadius:8,border:"none",background:isPaused?"#EDE9FE":"#f3f4f6",cursor:"pointer",fontSize:11,fontWeight:600,color:isPaused?"#7C3AED":"#888"}} title="Pausar" onClick={()=>{if(!isPaused){setMTxt("");setModal({type:"pausar",spec:c});}else setPaused(c,false);}}>⏸ Pausa</button>
+                  <button style={{padding:"3px 10px",borderRadius:8,border:"none",background:"#f3f4f6",cursor:"pointer",fontSize:11,fontWeight:600,color:"#888"}} title="Nota" onClick={()=>{setMTxt(c.note||"");setModal({type:"nota",spec:c});}}>📝 Nota</button>
+                  <span style={{padding:"3px 10px",borderRadius:8,fontSize:11,fontWeight:600,background:credits>0?"#FEF3C7":"#f3f4f6",color:credits>0?"#B45309":"#aaa",cursor:"pointer"}} onClick={()=>addInd(qId,c.id)} title="Adicionar indicação">📌 {credits}</span>
+                  <span style={{padding:"3px 10px",borderRadius:8,fontSize:11,fontWeight:600,background:"#D1FAE5",color:"#10B981",cursor:"pointer"}} title="Adicionar cliente presencial" onClick={()=>setModal({type:"manual",spec:c,qId})}>+1 Presencial</span>
                 </div>
               </div>
             );
