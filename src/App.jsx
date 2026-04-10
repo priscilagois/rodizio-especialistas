@@ -10,7 +10,8 @@ const QUEUES=[
 const MONTHS=["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
 const WEEKDAYS=["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"];
 const RCOLS=["#7C3AED","#0EA5E9","#10B981","#F59E0B","#EF4444"];
-const PIN="1234";
+const ADMIN_NAMES=["priscila","marcelo","pedro","roberta"];
+const ADMIN_PIN="Orange2026";
 const TABS=[{id:"Painel",icon:"📊"},{id:"Rodízio",icon:"🔄"},{id:"Controle",icon:"📅"},{id:"Pausas",icon:"⏸"},{id:"Histórico",icon:"📋"},{id:"Salas",icon:"🚪"},{id:"Presença",icon:"📆"}];
 
 const INIT_SPECS=[
@@ -49,7 +50,9 @@ async function rpc(fn,params){
 }
 
 const todayKey=()=>new Date().toLocaleDateString("pt-BR");
+const yesterdayKey=()=>{const d=new Date();d.setDate(d.getDate()-1);return d.toLocaleDateString("pt-BR");};
 const initials=n=>n.replace(/[^A-Za-záéíóúÁÉÍÓÚ ]/g,"").trim().split(" ").slice(0,2).map(w=>w[0]?.toUpperCase()||"").join("");
+const isAdmin=name=>ADMIN_NAMES.includes(name?.toLowerCase().trim());
 function getWorkdays(y,m){const d=[],dt=new Date(y,m,1);while(dt.getMonth()===m){if(dt.getDay()!==0&&dt.getDay()!==6)d.push(new Date(dt));dt.setDate(dt.getDate()+1);}return d;}
 
 export default function App(){
@@ -58,6 +61,7 @@ export default function App(){
   const [evts,setEvts]=useState([]);
   const [dayLog,setDayLog]=useState([]);
   const [lastMap,setLastMap]=useState({});
+  const [prevCounts,setPrevCounts]=useState({});// contagens do dia anterior por fila
   const [sdrs,setSdrs]=useState(INIT_SDRS);
   const [rooms,setRooms]=useState(INIT_ROOMS);
   const [bookings,setBookings]=useState([]);
@@ -70,7 +74,6 @@ export default function App(){
   const [mTxt,setMTxt]=useState("");
   const [adminOk,setAdminOk]=useState(false);
   const [adminOpen,setAdminOpen]=useState(false);
-  const [aPin,setAPin]=useState("");
   const [addForm,setAddForm]=useState(false);
   const [newC,setNewC]=useState({name:"",queues:[],status:"active",note:""});
   const [editSdr,setEditSdr]=useState(null);
@@ -80,15 +83,38 @@ export default function App(){
   const [ctrlM,setCtrlM]=useState({y:new Date().getFullYear(),m:new Date().getMonth()});
   const [ctrlQ,setCtrlQ]=useState("USA");
   const [presM,setPresM]=useState({y:new Date().getFullYear(),m:new Date().getMonth()});
-  const [userName,setUserName]=useState(()=>localStorage.getItem("rodizio_user")||"");
-  const [askName,setAskName]=useState(false);
-  const [tmpName,setTmpName]=useState("");
   const [bkForm,setBkForm]=useState({room_id:"",specialist_name:"",booking_date:"",start_time:"09:00",end_time:"10:00",notes:""});
   const notifRef=useRef(new Set());
 
-  useEffect(()=>{if(!localStorage.getItem("rodizio_user"))setAskName(true);},[]);
+  // Auth state
+  const [authStep,setAuthStep]=useState("idle");// idle | name | pin_create | pin_enter | done
+  const [tmpName,setTmpName]=useState("");
+  const [tmpPin,setTmpPin]=useState("");
+  const [tmpPin2,setTmpPin2]=useState("");
+  const [userName,setUserName]=useState("");
+  const [userIsAdmin,setUserIsAdmin]=useState(false);
+
+  // On mount: check stored user
+  useEffect(()=>{
+    const stored=localStorage.getItem("rodizio_user");
+    const storedPin=localStorage.getItem("rodizio_pin_"+stored);
+    if(stored&&storedPin){
+      // has pin stored, need to verify
+      setTmpName(stored);
+      setAuthStep("pin_enter");
+    } else if(stored&&isAdmin(stored)){
+      // admin stored but no pin needed
+      setUserName(stored);
+      setUserIsAdmin(true);
+      setAdminOk(true);
+      setAuthStep("done");
+    } else {
+      setAuthStep("name");
+    }
+  },[]);
 
   useEffect(()=>{
+    if(authStep!=="done")return;
     (async()=>{
       try{
         const [sp,hi,ev,dc,la,sd,rm,bk,pr]=await Promise.all([
@@ -103,7 +129,17 @@ export default function App(){
           sb("presence_calendar?order=presence_date"),
         ]);
         if(sp?.length)setSpecs(sp);
-        if(hi?.length)setHist(hi);
+        if(hi?.length){
+          setHist(hi);
+          // build prev day counts
+          const yk=yesterdayKey();
+          const pc={};
+          hi.filter(h=>h.date_key===yk).forEach(h=>{
+            if(!pc[h.queue_id])pc[h.queue_id]={};
+            pc[h.queue_id][h.spec_name]=(pc[h.queue_id][h.spec_name]||0)+1;
+          });
+          setPrevCounts(pc);
+        }
         if(ev?.length)setEvts(ev);
         if(dc?.length)setDayLog(dc);
         if(sd?.length)setSdrs(sd);
@@ -114,19 +150,109 @@ export default function App(){
       }catch(e){console.error(e);}
       setLoading(false);
     })();
-  },[]);
+  },[authStep]);
 
   function showToast(msg,type="success"){setToast({msg,type});setTimeout(()=>setToast(null),2800);}
   const today=todayKey();
 
+  // totalOf uses today's counts; for ordering uses prevCounts when today is zero
   function totalOf(c,qId){return(c.counts?.[qId]||0)+(c.ind?.[qId]||0);}
-  function activePool(qId){return specs.filter(c=>c.status==="active"&&c.queues.includes(qId)).sort((a,b)=>totalOf(a,qId)-totalOf(b,qId)||a.name.localeCompare(b.name,"pt"));}
-  function selPool(qId){return specs.filter(c=>c.status==="active"&&c.queues.includes(qId)&&c.selecao).sort((a,b)=>totalOf(a,qId)-totalOf(b,qId)||a.name.localeCompare(b.name,"pt"));}
+  function prevTotal(name,qId){return prevCounts[qId]?.[name]||0;}
+  function orderScore(c,qId){
+    const todayT=totalOf(c,qId);
+    // if today has no assignments yet, use yesterday's count as tiebreaker
+    return todayT*10000+(todayT===0?prevTotal(c.name,qId):0);
+  }
+  function activePool(qId){return specs.filter(c=>c.status==="active"&&c.queues.includes(qId)).sort((a,b)=>orderScore(a,qId)-orderScore(b,qId)||a.name.localeCompare(b.name,"pt"));}
+  function selPool(qId){return specs.filter(c=>c.status==="active"&&c.queues.includes(qId)&&c.selecao).sort((a,b)=>orderScore(a,qId)-orderScore(b,qId)||a.name.localeCompare(b.name,"pt"));}
 
+  // Auth handlers
+  function handleNameSubmit(){
+    const name=tmpName.trim();
+    if(!name)return;
+    if(isAdmin(name)){
+      // admin: ask for admin pin
+      setAuthStep("pin_enter_admin");
+      return;
+    }
+    const storedPin=localStorage.getItem("rodizio_pin_"+name);
+    if(storedPin){
+      setAuthStep("pin_enter");
+    } else {
+      setAuthStep("pin_create");
+    }
+  }
+
+  function handleAdminPinSubmit(){
+    if(tmpPin===ADMIN_PIN){
+      const name=tmpName.trim();
+      localStorage.setItem("rodizio_user",name);
+      setUserName(name);
+      setUserIsAdmin(true);
+      setAdminOk(true);
+      setAuthStep("done");
+      setTmpPin("");
+    } else {
+      showToast("PIN incorreto","error");
+      setTmpPin("");
+    }
+  }
+
+  function handlePinCreate(){
+    if(tmpPin.length<4){showToast("PIN deve ter ao menos 4 caracteres","error");return;}
+    if(tmpPin!==tmpPin2){showToast("PINs não coincidem","error");return;}
+    const name=tmpName.trim();
+    localStorage.setItem("rodizio_pin_"+name,tmpPin);
+    localStorage.setItem("rodizio_user",name);
+    setUserName(name);
+    setUserIsAdmin(false);
+    setAdminOk(false);
+    setAuthStep("done");
+    setTmpPin("");setTmpPin2("");
+  }
+
+  function handlePinEnter(){
+    const name=tmpName.trim();
+    const stored=localStorage.getItem("rodizio_pin_"+name);
+    if(tmpPin===stored){
+      localStorage.setItem("rodizio_user",name);
+      setUserName(name);
+      setUserIsAdmin(false);
+      setAdminOk(false);
+      setAuthStep("done");
+      setTmpPin("");
+    } else {
+      showToast("PIN incorreto","error");
+      setTmpPin("");
+    }
+  }
+
+  function handleLogout(){
+    localStorage.removeItem("rodizio_user");
+    setUserName("");setTmpName("");setTmpPin("");setTmpPin2("");
+    setUserIsAdmin(false);setAdminOk(false);
+    setAuthStep("name");
+  }
+
+  // Rotate functions
   async function rotateNormal(qId){if(saving)return;setSaving(true);try{const res=await rpc("assign_next",{p_queue_id:qId,p_type:"normal",p_user:userName});if(res?.error)showToast("Nenhum disponível.","error");else{showToast(`Atribuído: ${res.specialist.name}`);const[sp,la]=await Promise.all([sb("specialists?order=name"),sb("last_assigned?select=*")]);if(sp?.length)setSpecs(sp);const lm={};(la||[]).forEach(r=>{lm[r.queue_id]={name:r.spec_name,type:r.type};});setLastMap(lm);const hi=await sb("history?order=created_at.desc&limit=1000");if(hi?.length)setHist(hi);}}catch{showToast("Erro.","error");}setSaving(false);}
   async function rotateSelecao(qId){const pool=selPool(qId);if(!pool.length){showToast("Nenhum com ⭐.","error");return;}if(saving)return;setSaving(true);try{const spec=pool[0];await sb(`specialists?id=eq.${spec.id}`,"PATCH",{ind:{...spec.ind,[qId]:(spec.ind?.[qId]||0)+1}});const res=await rpc("assign_next",{p_queue_id:qId,p_type:"selecao",p_user:userName});if(res?.error)showToast("Erro.","error");else{showToast(`Seleção: ${res.specialist.name}`);const sp=await sb("specialists?order=name");if(sp?.length)setSpecs(sp);}}catch{showToast("Erro.","error");}setSaving(false);}
   async function rotateRecart(qId){if(saving)return;setSaving(true);try{const res=await rpc("assign_recart",{p_queue_id:qId,p_user:userName});if(res?.error)showToast("Nenhum disponível.","error");else{showToast(`Recart. Férias: ${res.specialist.name}`);const sp=await sb("specialists?order=name");if(sp?.length)setSpecs(sp);}}catch{showToast("Erro.","error");}setSaving(false);}
+
   async function addInd(qId,specId){const spec=specs.find(c=>c.id===specId);if(!spec)return;try{await sb(`specialists?id=eq.${specId}`,"PATCH",{ind:{...spec.ind,[qId]:(spec.ind?.[qId]||0)+1}});await sb("history","POST",{spec_name:spec.name,queue_id:qId,type:"indicacao",by_user:userName,date_key:today});showToast(`Indicação: ${spec.name}`);const sp=await sb("specialists?order=name");if(sp?.length)setSpecs(sp);}catch{showToast("Erro.","error");}}
+
+  // Admin: add extra client to any specialist
+  async function addExtra(qId,specId){
+    if(!adminOk)return;
+    const spec=specs.find(c=>c.id===specId);if(!spec)return;
+    try{
+      await sb(`specialists?id=eq.${specId}`,"PATCH",{counts:{...spec.counts,[qId]:(spec.counts?.[qId]||0)+1}});
+      await sb("history","POST",{spec_name:spec.name,queue_id:qId,type:"extra_admin",by_user:userName,date_key:today});
+      showToast(`+1 extra: ${spec.name}`);
+      const sp=await sb("specialists?order=name");if(sp?.length)setSpecs(sp);
+    }catch{showToast("Erro.","error");}
+  }
+
   async function toggleSel(spec){try{await sb(`specialists?id=eq.${spec.id}`,"PATCH",{selecao:!spec.selecao});const sp=await sb("specialists?order=name");if(sp?.length)setSpecs(sp);}catch{}}
   async function setVacation(spec,on,note=""){try{await sb(`specialists?id=eq.${spec.id}`,"PATCH",{status:on?"vacation":"active",note:on?note:spec.note});await sb("events","POST",{type:on?"pausa_inicio":"pausa_fim",spec_name:spec.name,detail:on?note:"Retornou de férias",by_user:userName,date_key:today});showToast(on?"Férias registradas!":"Retorno registrado!");const sp=await sb("specialists?order=name");if(sp?.length)setSpecs(sp);const ev=await sb("events?order=created_at.desc&limit=500");if(ev?.length)setEvts(ev);}catch{showToast("Erro.","error");}}
   async function setPaused(spec,on,note=""){try{await sb(`specialists?id=eq.${spec.id}`,"PATCH",{status:on?"paused":"active",note:on?note:spec.note});await sb("events","POST",{type:on?"pausa_inicio":"pausa_fim",spec_name:spec.name,detail:on?note:"Reativado",by_user:userName,date_key:today});showToast(on?"Pausado!":"Reativado!");const sp=await sb("specialists?order=name");if(sp?.length)setSpecs(sp);}catch{showToast("Erro.","error");}}
@@ -144,7 +270,15 @@ export default function App(){
       await sb("day_closings","POST",{closed_date:yKey,closed_label:yLabel,closed_by:userName,summary,total_normal:summary.reduce((a,s)=>a+s.normal,0),total_ind:summary.reduce((a,s)=>a+s.ind,0)});
       for(const s of specs)await sb(`specialists?id=eq.${s.id}`,"PATCH",{counts:{}});
       await sb("last_assigned","DELETE");
-      setLastMap({});showToast("Novo dia iniciado!");
+      setLastMap({});
+      // rebuild prevCounts from yesterday's history
+      const pc={};
+      hist.filter(h=>h.date_key===yKey).forEach(h=>{
+        if(!pc[h.queue_id])pc[h.queue_id]={};
+        pc[h.queue_id][h.spec_name]=(pc[h.queue_id][h.spec_name]||0)+1;
+      });
+      setPrevCounts(pc);
+      showToast("Novo dia iniciado!");
       const sp=await sb("specialists?order=name");if(sp?.length)setSpecs(sp);
     }catch{showToast("Erro.","error");}
   }
@@ -158,13 +292,17 @@ export default function App(){
     catch{showToast("Erro.","error");}
   }
   async function deleteBooking(id){if(!confirm("Cancelar?"))return;try{await sb(`meeting_bookings?id=eq.${id}`,"DELETE");const bk=await sb("meeting_bookings?order=booking_date,start_time");if(bk)setBookings(bk);}catch{}}
+
   async function togglePresence(sdrName,dateStr){
+    // SDRs can only toggle their own; admins can toggle any
+    if(!adminOk&&sdrName!==userName){showToast("Você só pode alterar sua própria presença.","error");return;}
     const ex=presence.find(p=>p.sdr_name===sdrName&&p.presence_date===dateStr);
     try{if(ex)await sb(`presence_calendar?id=eq.${ex.id}`,"DELETE");else await sb("presence_calendar","POST",{sdr_name:sdrName,presence_date:dateStr});const pr=await sb("presence_calendar?order=presence_date");if(pr)setPresence(pr);}
     catch{showToast("Erro.","error");}
   }
 
   useEffect(()=>{
+    if(authStep!=="done")return;
     const id=setInterval(()=>{
       const now=new Date();
       bookings.filter(b=>b.booking_date===today).forEach(b=>{
@@ -175,7 +313,7 @@ export default function App(){
       });
     },30000);
     return()=>clearInterval(id);
-  },[bookings,today]);
+  },[bookings,today,authStep]);
 
   const f="var(--font-sans, system-ui, sans-serif)";
   const C={
@@ -185,23 +323,75 @@ export default function App(){
     btnS:{cursor:"pointer",padding:"9px 16px",borderRadius:10,border:"1.5px solid #e5e7eb",background:"#fff",fontSize:13,color:"#555"}
   };
 
+  // AUTH SCREENS
+  if(authStep==="name"||authStep==="idle"){
+    return(
+      <div style={{minHeight:"100vh",background:"linear-gradient(135deg,#7C3AED,#4F46E5)",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:f}}>
+        <div style={{background:"#fff",borderRadius:20,padding:"2.5rem",width:340,textAlign:"center"}}>
+          <div style={{fontSize:40,marginBottom:12}}>👋</div>
+          <div style={{fontWeight:700,fontSize:20,marginBottom:6}}>Bem-vindo!</div>
+          <div style={{fontSize:14,color:"#888",marginBottom:24}}>Digite seu nome para continuar</div>
+          <input style={{width:"100%",boxSizing:"border-box",padding:"12px 16px",borderRadius:10,border:"2px solid #e5e7eb",fontSize:15,marginBottom:16,outline:"none",color:"#222"}} placeholder="Seu nome" value={tmpName} onChange={e=>setTmpName(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleNameSubmit()} autoFocus/>
+          <button style={{width:"100%",padding:"12px",borderRadius:10,border:"none",background:"linear-gradient(135deg,#7C3AED,#4F46E5)",color:"#fff",fontSize:15,fontWeight:600,cursor:"pointer"}} onClick={handleNameSubmit}>Continuar</button>
+        </div>
+      </div>
+    );
+  }
+
+  if(authStep==="pin_enter_admin"){
+    return(
+      <div style={{minHeight:"100vh",background:"linear-gradient(135deg,#7C3AED,#4F46E5)",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:f}}>
+        <div style={{background:"#fff",borderRadius:20,padding:"2.5rem",width:340,textAlign:"center"}}>
+          <div style={{fontSize:40,marginBottom:12}}>🔐</div>
+          <div style={{fontWeight:700,fontSize:20,marginBottom:6}}>Olá, {tmpName}!</div>
+          <div style={{fontSize:14,color:"#888",marginBottom:24}}>Digite o PIN de administrador</div>
+          <input type="password" style={{width:"100%",boxSizing:"border-box",padding:"12px 16px",borderRadius:10,border:"2px solid #e5e7eb",fontSize:15,marginBottom:16,outline:"none",color:"#222",textAlign:"center",letterSpacing:4}} placeholder="••••••••" value={tmpPin} onChange={e=>setTmpPin(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleAdminPinSubmit()} autoFocus/>
+          {toast&&<div style={{marginBottom:12,padding:"8px",background:"#FEE2E2",color:"#EF4444",borderRadius:8,fontSize:13}}>{toast.msg}</div>}
+          <button style={{width:"100%",padding:"12px",borderRadius:10,border:"none",background:"linear-gradient(135deg,#7C3AED,#4F46E5)",color:"#fff",fontSize:15,fontWeight:600,cursor:"pointer",marginBottom:10}} onClick={handleAdminPinSubmit}>Entrar</button>
+          <button style={{background:"none",border:"none",color:"#aaa",fontSize:13,cursor:"pointer"}} onClick={()=>{setAuthStep("name");setTmpPin("");}}>← Voltar</button>
+        </div>
+      </div>
+    );
+  }
+
+  if(authStep==="pin_create"){
+    return(
+      <div style={{minHeight:"100vh",background:"linear-gradient(135deg,#7C3AED,#4F46E5)",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:f}}>
+        <div style={{background:"#fff",borderRadius:20,padding:"2.5rem",width:340,textAlign:"center"}}>
+          <div style={{fontSize:40,marginBottom:12}}>🔑</div>
+          <div style={{fontWeight:700,fontSize:20,marginBottom:6}}>Olá, {tmpName}!</div>
+          <div style={{fontSize:14,color:"#888",marginBottom:24}}>Crie um PIN para proteger seu acesso</div>
+          <input type="password" style={{width:"100%",boxSizing:"border-box",padding:"12px 16px",borderRadius:10,border:"2px solid #e5e7eb",fontSize:15,marginBottom:12,outline:"none",color:"#222",textAlign:"center",letterSpacing:4}} placeholder="Criar PIN" value={tmpPin} onChange={e=>setTmpPin(e.target.value)} autoFocus/>
+          <input type="password" style={{width:"100%",boxSizing:"border-box",padding:"12px 16px",borderRadius:10,border:"2px solid #e5e7eb",fontSize:15,marginBottom:16,outline:"none",color:"#222",textAlign:"center",letterSpacing:4}} placeholder="Confirmar PIN" value={tmpPin2} onChange={e=>setTmpPin2(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handlePinCreate()}/>
+          {toast&&<div style={{marginBottom:12,padding:"8px",background:"#FEE2E2",color:"#EF4444",borderRadius:8,fontSize:13}}>{toast.msg}</div>}
+          <button style={{width:"100%",padding:"12px",borderRadius:10,border:"none",background:"linear-gradient(135deg,#7C3AED,#4F46E5)",color:"#fff",fontSize:15,fontWeight:600,cursor:"pointer",marginBottom:10}} onClick={handlePinCreate}>Criar PIN e entrar</button>
+          <button style={{background:"none",border:"none",color:"#aaa",fontSize:13,cursor:"pointer"}} onClick={()=>{setAuthStep("name");setTmpPin("");setTmpPin2("");}}>← Voltar</button>
+        </div>
+      </div>
+    );
+  }
+
+  if(authStep==="pin_enter"){
+    return(
+      <div style={{minHeight:"100vh",background:"linear-gradient(135deg,#7C3AED,#4F46E5)",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:f}}>
+        <div style={{background:"#fff",borderRadius:20,padding:"2.5rem",width:340,textAlign:"center"}}>
+          <div style={{fontSize:40,marginBottom:12}}>🔒</div>
+          <div style={{fontWeight:700,fontSize:20,marginBottom:6}}>Olá, {tmpName}!</div>
+          <div style={{fontSize:14,color:"#888",marginBottom:24}}>Digite seu PIN para entrar</div>
+          <input type="password" style={{width:"100%",boxSizing:"border-box",padding:"12px 16px",borderRadius:10,border:"2px solid #e5e7eb",fontSize:15,marginBottom:16,outline:"none",color:"#222",textAlign:"center",letterSpacing:4}} placeholder="••••" value={tmpPin} onChange={e=>setTmpPin(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handlePinEnter()} autoFocus/>
+          {toast&&<div style={{marginBottom:12,padding:"8px",background:"#FEE2E2",color:"#EF4444",borderRadius:8,fontSize:13}}>{toast.msg}</div>}
+          <button style={{width:"100%",padding:"12px",borderRadius:10,border:"none",background:"linear-gradient(135deg,#7C3AED,#4F46E5)",color:"#fff",fontSize:15,fontWeight:600,cursor:"pointer",marginBottom:10}} onClick={handlePinEnter}>Entrar</button>
+          <button style={{background:"none",border:"none",color:"#aaa",fontSize:13,cursor:"pointer"}} onClick={()=>{setAuthStep("name");setTmpPin("");}}>← Voltar</button>
+        </div>
+      </div>
+    );
+  }
+
   if(loading)return(
     <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",fontFamily:f,flexDirection:"column",gap:12}}>
       <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
       <div style={{width:40,height:40,border:"4px solid #EDE9FE",borderTop:"4px solid #7C3AED",borderRadius:"50%",animation:"spin 1s linear infinite"}}/>
       <div style={{color:"#7C3AED",fontSize:15,fontWeight:600}}>Carregando...</div>
-    </div>
-  );
-
-  if(askName)return(
-    <div style={{minHeight:"100vh",background:"linear-gradient(135deg,#7C3AED,#4F46E5)",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:f}}>
-      <div style={{background:"#fff",borderRadius:20,padding:"2.5rem",width:340,textAlign:"center"}}>
-        <div style={{fontSize:40,marginBottom:12}}>👋</div>
-        <div style={{fontWeight:700,fontSize:20,marginBottom:6}}>Bem-vindo!</div>
-        <div style={{fontSize:14,color:"#888",marginBottom:24}}>Como você se chama?</div>
-        <input style={{width:"100%",boxSizing:"border-box",padding:"12px 16px",borderRadius:10,border:"2px solid #e5e7eb",fontSize:15,marginBottom:16,outline:"none",color:"#222"}} placeholder="Seu nome" value={tmpName} onChange={e=>setTmpName(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&tmpName.trim()){setUserName(tmpName.trim());localStorage.setItem("rodizio_user",tmpName.trim());setAskName(false);}}} autoFocus/>
-        <button style={{width:"100%",padding:"12px",borderRadius:10,border:"none",background:"linear-gradient(135deg,#7C3AED,#4F46E5)",color:"#fff",fontSize:15,fontWeight:600,cursor:"pointer"}} onClick={()=>{if(!tmpName.trim())return;setUserName(tmpName.trim());localStorage.setItem("rodizio_user",tmpName.trim());setAskName(false);}}>Entrar</button>
-      </div>
     </div>
   );
 
@@ -248,6 +438,7 @@ export default function App(){
           {allInQ.map((c,i)=>{
             const off=c.status!=="active",isVac=c.status==="vacation",isPaused=c.status==="paused";
             const credits=c.ind?.[qId]||0,tot=totalOf(c,qId);
+            const prev=prevTotal(c.name,qId);
             return(
               <div key={c.id} style={{display:"flex",alignItems:"center",gap:8,padding:"7px 6px",borderBottom:i<allInQ.length-1?"1px solid #f3f4f6":"none",opacity:off?0.45:1}}>
                 <div style={{width:30,height:30,borderRadius:"50%",background:off?"#e5e7eb":q.light,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,color:off?"#999":q.color,flexShrink:0}}>{initials(c.name)}</div>
@@ -257,17 +448,18 @@ export default function App(){
                     {isVac&&<span>🌴</span>}{isPaused&&<span>⏸</span>}{c.selecao&&<span>⭐</span>}
                   </div>
                   {c.note&&<div style={{fontSize:11,color:"#F59E0B"}}>{c.note}</div>}
+                  {prev>0&&tot===0&&<div style={{fontSize:10,color:"#aaa"}}>ontem: {prev}</div>}
                 </div>
                 <div style={{display:"flex",gap:4,alignItems:"center",flexShrink:0}}>
                   <span style={{padding:"2px 8px",borderRadius:20,fontSize:11,fontWeight:700,background:q.light,color:q.color}}>{tot}</span>
                   <span style={{padding:"2px 8px",borderRadius:20,fontSize:11,fontWeight:700,background:credits>0?"#FEF3C7":"#f3f4f6",color:credits>0?"#B45309":"#aaa",cursor:"pointer"}} onClick={()=>addInd(qId,c.id)}>📌{credits}</span>
+                  {adminOk&&<span style={{padding:"2px 8px",borderRadius:20,fontSize:11,fontWeight:700,background:"#D1FAE5",color:"#10B981",cursor:"pointer"}} title="Adicionar cliente extra" onClick={()=>addExtra(qId,c.id)}>+1</span>}
                 </div>
                 <div style={{display:"flex",gap:3,flexShrink:0}}>
                   <button style={{width:26,height:26,borderRadius:8,border:"none",background:c.selecao?"#FEF3C7":"#f3f4f6",cursor:"pointer",fontSize:12}} onClick={()=>toggleSel(c)}>⭐</button>
                   <button style={{width:26,height:26,borderRadius:8,border:"none",background:isVac?"#D1FAE5":"#f3f4f6",cursor:"pointer",fontSize:12}} onClick={()=>{if(!isVac){setMTxt("");setModal({type:"vacation",spec:c});}else setVacation(c,false);}}>🌴</button>
                   <button style={{width:26,height:26,borderRadius:8,border:"none",background:isPaused?"#EDE9FE":"#f3f4f6",cursor:"pointer",fontSize:12}} onClick={()=>{if(!isPaused){setMTxt("");setModal({type:"pausar",spec:c});}else setPaused(c,false);}}>⏸</button>
                   <button style={{width:26,height:26,borderRadius:8,border:"none",background:"#f3f4f6",cursor:"pointer",fontSize:12}} onClick={()=>{setMTxt(c.note||"");setModal({type:"nota",spec:c});}}>📝</button>
-                  {adminOk&&<button style={{width:26,height:26,borderRadius:8,border:"none",background:"#FEE2E2",cursor:"pointer",fontSize:12}} onClick={()=>removeSpec(c.id)}>🗑️</button>}
                 </div>
               </div>
             );
@@ -437,6 +629,9 @@ export default function App(){
             ))}
           </div>
         </div>
+        <div style={{fontSize:12,color:"#888",marginBottom:10,padding:"6px 10px",background:"#FEF3C7",borderRadius:8}}>
+          {adminOk?"👑 Admin: você pode marcar presença de qualquer SDR.":"💡 Você só pode marcar sua própria presença."}
+        </div>
         <div style={{display:"flex",gap:6,alignItems:"center",marginBottom:14,background:"#fff",borderRadius:10,border:"1px solid #e5e7eb",padding:"6px 10px",width:"fit-content"}}>
           <button style={{...C.btnS,padding:"5px 10px"}} onClick={()=>setPresM(p=>{const d=new Date(p.y,p.m-1,1);return{y:d.getFullYear(),m:d.getMonth()}})}>‹</button>
           <span style={{fontWeight:600,fontSize:13,minWidth:120,textAlign:"center"}}>{MONTHS[presM.m]} {presM.y}</span>
@@ -459,19 +654,20 @@ export default function App(){
             <tbody>
               {sdrList.map((sdr,si)=>{
                 const rb=si%2===0?"#fff":"#fafafa",monthTotal=wd.filter(d=>isPresent(sdr,fdk(d))).length;
+                const canEdit=adminOk||sdr===userName;
                 return(
                   <tr key={sdr}>
                     <td style={{padding:"8px 12px",fontWeight:600,fontSize:13,background:rb,border:"0.5px solid #f3f4f6"}}>
                       <div style={{display:"flex",alignItems:"center",gap:6}}>
                         <div style={{width:24,height:24,borderRadius:"50%",background:"#EDE9FE",display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,fontWeight:700,color:"#7C3AED"}}>{initials(sdr)}</div>
-                        {sdr}
+                        {sdr}{sdr===userName&&<span style={{fontSize:10,color:"#7C3AED",background:"#EDE9FE",borderRadius:6,padding:"1px 5px"}}>você</span>}
                       </div>
                     </td>
                     {wd.map(d=>{
                       const dk=fdk(d),present=isPresent(sdr,dk),isToday=dk===today;
                       return(
                         <td key={d.toISOString()} style={{padding:"4px",textAlign:"center",background:present?"#EDE9FE":isToday?"#fafaf5":rb,border:`0.5px solid ${isToday?"#C4B5F4":"#f3f4f6"}`}}>
-                          <button style={{width:28,height:28,borderRadius:8,border:`2px solid ${present?"#7C3AED":"#e5e7eb"}`,background:present?"#7C3AED":"transparent",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",margin:"auto"}} onClick={()=>togglePresence(sdr,dk)}>
+                          <button style={{width:28,height:28,borderRadius:8,border:`2px solid ${present?"#7C3AED":canEdit?"#e5e7eb":"#f3f4f6"}`,background:present?"#7C3AED":"transparent",cursor:canEdit?"pointer":"default",display:"flex",alignItems:"center",justifyContent:"center",margin:"auto",opacity:canEdit?1:0.4}} onClick={()=>canEdit&&togglePresence(sdr,dk)}>
                             {present&&<span style={{color:"#fff",fontSize:12,fontWeight:700}}>✓</span>}
                           </button>
                         </td>
@@ -500,58 +696,59 @@ export default function App(){
         <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
           <button style={{padding:"8px 16px",borderRadius:10,border:"none",background:"#10B981",color:"#fff",fontSize:13,fontWeight:600,cursor:"pointer"}} onClick={iniciarNovoDia}>☀️ Novo dia</button>
           <div style={{display:"flex",alignItems:"center",gap:6,background:"#ffffff20",borderRadius:10,padding:"6px 12px"}}>
-            <span style={{fontSize:13,color:"#fff"}}>👤 {userName}</span>
-            <button style={{background:"none",border:"none",color:"#ffffff80",fontSize:11,cursor:"pointer"}} onClick={()=>{localStorage.removeItem("rodizio_user");setUserName("");setAskName(true);}}>trocar</button>
+            <span style={{fontSize:13,color:"#fff"}}>👤 {userName}{userIsAdmin&&<span style={{background:"#10B981",borderRadius:6,padding:"1px 6px",fontSize:11,marginLeft:6}}>Admin</span>}</span>
+            <button style={{background:"none",border:"none",color:"#ffffff80",fontSize:11,cursor:"pointer"}} onClick={handleLogout}>sair</button>
           </div>
-          <button style={{padding:"8px 14px",borderRadius:10,border:"none",background:"#ffffff20",color:"#fff",fontSize:13,cursor:"pointer",fontWeight:500}} onClick={()=>setAdminOpen(true)}>
-            🔐 Admin{adminOk&&<span style={{background:"#10B981",borderRadius:6,padding:"1px 6px",fontSize:11,marginLeft:4}}>ON</span>}
-          </button>
+          {adminOk&&<button style={{padding:"8px 14px",borderRadius:10,border:"none",background:"#ffffff20",color:"#fff",fontSize:13,cursor:"pointer",fontWeight:500}} onClick={()=>setAdminOpen(true)}>⚙️ Admin</button>}
         </div>
       </div>
       <div style={{display:"flex",gap:3,background:"#fff",borderRadius:14,padding:4,marginBottom:16,border:"1px solid #e5e7eb",flexWrap:"wrap"}}>
         {TABS.map(t=><button key={t.id} style={{flex:1,minWidth:55,padding:"7px 2px",borderRadius:10,border:"none",cursor:"pointer",fontSize:11,fontWeight:tab===t.id?700:400,background:tab===t.id?"linear-gradient(135deg,#7C3AED,#4F46E5)":"transparent",color:tab===t.id?"#fff":"#888"}} onClick={()=>setTab(t.id)}>{t.icon} {t.id}</button>)}
       </div>
       {toast&&<div style={{marginBottom:12,padding:"10px 16px",background:toast.type==="error"?"#FEE2E2":toast.type==="info"?"#EDE9FE":"#D1FAE5",color:toast.type==="error"?"#EF4444":toast.type==="info"?"#7C3AED":"#10B981",borderRadius:10,fontSize:13,fontWeight:500}}>{toast.msg}</div>}
-      {(modal||adminOpen)&&(
+
+      {adminOpen&&(
+        <div style={{background:"#fff",borderRadius:16,padding:"1.5rem",border:"1px solid #e5e7eb",marginBottom:16,boxShadow:"0 4px 24px #7C3AED20"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+            <span style={{fontWeight:700,fontSize:15}}>⚙️ Painel Admin</span>
+            <button style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"#aaa"}} onClick={()=>setAdminOpen(false)}>×</button>
+          </div>
+          <div style={{fontWeight:700,fontSize:13,marginBottom:8}}>SDRs</div>
+          <div style={{maxHeight:150,overflowY:"auto",marginBottom:12}}>
+            {sdrs.map(s=>(<div key={s.id} style={{padding:"6px 0",borderBottom:"1px solid #f3f4f6"}}>
+              {editSdr?.id===s.id?(<div style={{display:"flex",gap:8}}><input style={{...C.inp,flex:1,padding:"6px 10px"}} value={editSdr.name} onChange={e=>setEditSdr(p=>({...p,name:e.target.value}))} autoFocus/><button style={{...C.btnP,padding:"6px 12px",fontSize:12}} onClick={async()=>{await sb(`sdrs?id=eq.${s.id}`,"PATCH",{name:editSdr.name});const sd=await sb("sdrs?order=name");if(sd)setSdrs(sd);setEditSdr(null);showToast("Atualizado!");}}>✓</button><button style={{...C.btnS,padding:"6px 10px",fontSize:12}} onClick={()=>setEditSdr(null)}>✕</button></div>)
+              :(<div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><span style={{fontWeight:600,fontSize:13}}>{s.name}</span><div style={{display:"flex",gap:6}}><button style={{padding:"4px 8px",borderRadius:8,border:"1px solid #e5e7eb",background:"#f9fafb",fontSize:12,cursor:"pointer"}} onClick={()=>setEditSdr({id:s.id,name:s.name})}>✏️</button><button style={{padding:"4px 8px",borderRadius:8,border:"1px solid #FECACA",background:"#FEE2E2",color:"#EF4444",fontSize:12,cursor:"pointer"}} onClick={async()=>{if(!confirm(`Remover ${s.name}?`))return;await sb(`sdrs?id=eq.${s.id}`,"DELETE");const sd=await sb("sdrs?order=name");if(sd)setSdrs(sd);}}>🗑️</button></div></div>)}
+            </div>))}
+          </div>
+          <div style={{fontWeight:700,fontSize:13,marginBottom:8}}>Salas</div>
+          <div style={{maxHeight:150,overflowY:"auto",marginBottom:12}}>
+            {rooms.map((r,ri)=>(<div key={r.id} style={{padding:"6px 0",borderBottom:"1px solid #f3f4f6"}}>
+              {editRoom?.id===r.id?(<div style={{display:"flex",gap:8}}><input style={{...C.inp,flex:1,padding:"6px 10px"}} value={editRoom.name} onChange={e=>setEditRoom(p=>({...p,name:e.target.value}))} autoFocus/><button style={{...C.btnP,padding:"6px 12px",fontSize:12}} onClick={async()=>{await sb(`meeting_rooms?id=eq.${r.id}`,"PATCH",{name:editRoom.name});const rm=await sb("meeting_rooms?order=name");if(rm)setRooms(rm);setEditRoom(null);showToast("Atualizado!");}}>✓</button><button style={{...C.btnS,padding:"6px 10px",fontSize:12}} onClick={()=>setEditRoom(null)}>✕</button></div>)
+              :(<div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><div style={{display:"flex",alignItems:"center",gap:8}}><div style={{width:10,height:10,borderRadius:"50%",background:RCOLS[ri%RCOLS.length]}}/><span style={{fontWeight:600,fontSize:13}}>{r.name}</span></div><div style={{display:"flex",gap:6}}><button style={{padding:"4px 8px",borderRadius:8,border:"1px solid #e5e7eb",background:"#f9fafb",fontSize:12,cursor:"pointer"}} onClick={()=>setEditRoom({id:r.id,name:r.name})}>✏️</button><button style={{padding:"4px 8px",borderRadius:8,border:"1px solid #FECACA",background:"#FEE2E2",color:"#EF4444",fontSize:12,cursor:"pointer"}} onClick={async()=>{if(!confirm(`Remover ${r.name}?`))return;await sb(`meeting_rooms?id=eq.${r.id}`,"DELETE");const rm=await sb("meeting_rooms?order=name");if(rm)setRooms(rm);}}>🗑️</button></div></div>)}
+            </div>))}
+          </div>
+          <div style={{height:"1px",background:"#e5e7eb",margin:"8px 0 14px"}}/>
+          <div style={{fontWeight:700,fontSize:13,marginBottom:8}}>Especialistas</div>
+          <div style={{maxHeight:220,overflowY:"auto",marginBottom:8}}>
+            {specs.map(c=>(<div key={c.id} style={{padding:"6px 0",borderBottom:"1px solid #f3f4f6"}}>
+              {editSpec?.id===c.id?(<div><input style={{...C.inp,marginBottom:8,padding:"6px 10px"}} value={editSpec.name} onChange={e=>setEditSpec(p=>({...p,name:e.target.value}))} autoFocus/><div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:8}}>{QUEUES.map(q=>{const sel=editSpec.queues.includes(q.id);return<span key={q.id} style={{padding:"3px 10px",borderRadius:20,fontSize:11,cursor:"pointer",border:`2px solid ${sel?q.color:"#e5e7eb"}`,background:sel?q.light:"#fff",color:sel?q.color:"#888"}} onClick={()=>setEditSpec(p=>({...p,queues:sel?p.queues.filter(x=>x!==q.id):[...p.queues,q.id]}))}>{q.icon} {q.label}</span>;})}</div><div style={{display:"flex",gap:8}}><button style={{...C.btnP,padding:"6px 12px",fontSize:12}} onClick={async()=>{await sb(`specialists?id=eq.${c.id}`,"PATCH",{name:editSpec.name,queues:editSpec.queues});const sp=await sb("specialists?order=name");if(sp)setSpecs(sp);setEditSpec(null);showToast("Atualizado!");}}>✓ Salvar</button><button style={{...C.btnS,padding:"6px 10px",fontSize:12}} onClick={()=>setEditSpec(null)}>Cancelar</button></div></div>)
+              :(<div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><div><div style={{fontWeight:600,fontSize:13}}>{c.name}</div><div style={{fontSize:11,color:"#888"}}>{c.queues.map(q=>QUEUES.find(x=>x.id===q)?.label).join(", ")}</div></div><div style={{display:"flex",gap:6}}><button style={{padding:"4px 8px",borderRadius:8,border:"1px solid #e5e7eb",background:"#f9fafb",fontSize:12,cursor:"pointer"}} onClick={()=>setEditSpec({id:c.id,name:c.name,queues:[...c.queues]})}>✏️</button><button style={{padding:"4px 8px",borderRadius:8,border:"1px solid #FECACA",background:"#FEE2E2",color:"#EF4444",fontSize:12,cursor:"pointer"}} onClick={()=>removeSpec(c.id)}>🗑️</button></div></div>)}
+            </div>))}
+          </div>
+          {!addForm?(<button style={{...C.btnS,marginBottom:8}} onClick={()=>setAddForm(true)}>+ Adicionar especialista</button>):(<div style={{padding:14,borderRadius:12,border:"1px solid #e5e7eb",background:"#fafafa",marginBottom:8}}><div style={{marginBottom:8}}><div style={{fontSize:12,fontWeight:600,color:"#555",marginBottom:4}}>Nome</div><input style={C.inp} value={newC.name} onChange={e=>setNewC(p=>({...p,name:e.target.value}))}/></div><div style={{marginBottom:10}}><div style={{fontSize:12,fontWeight:600,color:"#555",marginBottom:6}}>Filas</div><div style={{display:"flex",gap:6,flexWrap:"wrap"}}>{QUEUES.map(q=>{const sel=newC.queues.includes(q.id);return<span key={q.id} style={{padding:"4px 12px",borderRadius:20,fontSize:12,cursor:"pointer",border:`2px solid ${sel?q.color:"#e5e7eb"}`,background:sel?q.light:"#fff",color:sel?q.color:"#888",fontWeight:sel?600:400}} onClick={()=>setNewC(p=>({...p,queues:sel?p.queues.filter(x=>x!==q.id):[...p.queues,q.id]}))}>{q.icon} {q.label}</span>;})}</div></div><div style={{display:"flex",gap:8}}><button style={C.btnP} onClick={addSpec}>Adicionar</button><button style={C.btnS} onClick={()=>setAddForm(false)}>Cancelar</button></div></div>)}
+          <div style={{height:"1px",background:"#e5e7eb",margin:"8px 0 12px"}}/>
+          <button style={{padding:"6px 12px",borderRadius:8,border:"1px solid #FECACA",background:"#FEE2E2",color:"#EF4444",fontSize:12,fontWeight:600,cursor:"pointer"}} onClick={async()=>{if(!confirm("Limpar histórico?"))return;await sb("history","DELETE");setHist([]);showToast("Histórico limpo!");}}>🗑️ Limpar histórico</button>
+        </div>
+      )}
+
+      {modal&&(
         <div style={{background:"#fff",borderRadius:16,padding:"1.5rem",border:"1px solid #e5e7eb",marginBottom:16,boxShadow:"0 4px 24px #7C3AED20"}}>
           {modal?.type==="nota"&&(<><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}><span style={{fontWeight:700,fontSize:15}}>📝 Nota — {modal.spec.name}</span><button style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"#aaa"}} onClick={()=>setModal(null)}>×</button></div><textarea rows={3} style={{...C.inp,resize:"none",fontFamily:f}} value={mTxt} onChange={e=>setMTxt(e.target.value)} autoFocus/><div style={{display:"flex",gap:8,marginTop:12}}><button style={C.btnP} onClick={()=>{saveNote(modal.spec,mTxt);setModal(null);}}>Salvar</button><button style={C.btnS} onClick={()=>setModal(null)}>Cancelar</button></div></>)}
           {modal?.type==="vacation"&&(<><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}><span style={{fontWeight:700,fontSize:15}}>🌴 Férias — {modal.spec.name}</span><button style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"#aaa"}} onClick={()=>setModal(null)}>×</button></div><input style={C.inp} placeholder="Motivo / data de retorno" value={mTxt} onChange={e=>setMTxt(e.target.value)} autoFocus/><div style={{display:"flex",gap:8,marginTop:12}}><button style={{...C.btnP,background:"#10B981"}} onClick={()=>{setVacation(modal.spec,true,mTxt);setModal(null);}}>Confirmar</button><button style={C.btnS} onClick={()=>setModal(null)}>Cancelar</button></div></>)}
           {modal?.type==="pausar"&&(<><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}><span style={{fontWeight:700,fontSize:15}}>⏸ Pausar — {modal.spec.name}</span><button style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"#aaa"}} onClick={()=>setModal(null)}>×</button></div><input style={C.inp} placeholder="Motivo da pausa" value={mTxt} onChange={e=>setMTxt(e.target.value)} autoFocus/><div style={{display:"flex",gap:8,marginTop:12}}><button style={C.btnP} onClick={()=>{setPaused(modal.spec,true,mTxt);setModal(null);}}>Confirmar</button><button style={C.btnS} onClick={()=>setModal(null)}>Cancelar</button></div></>)}
-          {adminOpen&&(
-            <>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}><span style={{fontWeight:700,fontSize:15}}>🔐 Administração</span><button style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"#aaa"}} onClick={()=>{setAdminOpen(false);setAdminOk(false);setAPin("");}}>×</button></div>
-              {!adminOk?(<><input type="password" style={{...C.inp,maxWidth:160}} value={aPin} onChange={e=>setAPin(e.target.value)} onKeyDown={e=>e.key==="Enter"&&(aPin===PIN?setAdminOk(true):showToast("PIN incorreto","error"))} placeholder="PIN 1234"/><button style={{...C.btnP,marginTop:12,display:"block"}} onClick={()=>aPin===PIN?setAdminOk(true):showToast("PIN incorreto","error")}>Entrar</button></>)
-              :(<>
-                <div style={{fontWeight:700,fontSize:13,marginBottom:8}}>SDRs</div>
-                <div style={{maxHeight:150,overflowY:"auto",marginBottom:8}}>
-                  {sdrs.map(s=>(<div key={s.id} style={{padding:"6px 0",borderBottom:"1px solid #f3f4f6"}}>
-                    {editSdr?.id===s.id?(<div style={{display:"flex",gap:8}}><input style={{...C.inp,flex:1,padding:"6px 10px"}} value={editSdr.name} onChange={e=>setEditSdr(p=>({...p,name:e.target.value}))} autoFocus/><button style={{...C.btnP,padding:"6px 12px",fontSize:12}} onClick={async()=>{await sb(`sdrs?id=eq.${s.id}`,"PATCH",{name:editSdr.name});const sd=await sb("sdrs?order=name");if(sd)setSdrs(sd);setEditSdr(null);showToast("Atualizado!");}}>✓</button><button style={{...C.btnS,padding:"6px 10px",fontSize:12}} onClick={()=>setEditSdr(null)}>✕</button></div>)
-                    :(<div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><span style={{fontWeight:600,fontSize:13}}>{s.name}</span><div style={{display:"flex",gap:6}}><button style={{padding:"4px 8px",borderRadius:8,border:"1px solid #e5e7eb",background:"#f9fafb",fontSize:12,cursor:"pointer"}} onClick={()=>setEditSdr({id:s.id,name:s.name})}>✏️</button><button style={{padding:"4px 8px",borderRadius:8,border:"1px solid #FECACA",background:"#FEE2E2",color:"#EF4444",fontSize:12,cursor:"pointer"}} onClick={async()=>{if(!confirm(`Remover ${s.name}?`))return;await sb(`sdrs?id=eq.${s.id}`,"DELETE");const sd=await sb("sdrs?order=name");if(sd)setSdrs(sd);}}>🗑️</button></div></div>)}
-                  </div>))}
-                </div>
-                <div style={{fontWeight:700,fontSize:13,marginBottom:8}}>Salas</div>
-                <div style={{maxHeight:150,overflowY:"auto",marginBottom:8}}>
-                  {rooms.map((r,ri)=>(<div key={r.id} style={{padding:"6px 0",borderBottom:"1px solid #f3f4f6"}}>
-                    {editRoom?.id===r.id?(<div style={{display:"flex",gap:8}}><input style={{...C.inp,flex:1,padding:"6px 10px"}} value={editRoom.name} onChange={e=>setEditRoom(p=>({...p,name:e.target.value}))} autoFocus/><button style={{...C.btnP,padding:"6px 12px",fontSize:12}} onClick={async()=>{await sb(`meeting_rooms?id=eq.${r.id}`,"PATCH",{name:editRoom.name});const rm=await sb("meeting_rooms?order=name");if(rm)setRooms(rm);setEditRoom(null);showToast("Atualizado!");}}>✓</button><button style={{...C.btnS,padding:"6px 10px",fontSize:12}} onClick={()=>setEditRoom(null)}>✕</button></div>)
-                    :(<div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><div style={{display:"flex",alignItems:"center",gap:8}}><div style={{width:10,height:10,borderRadius:"50%",background:RCOLS[ri%RCOLS.length]}}/><span style={{fontWeight:600,fontSize:13}}>{r.name}</span></div><div style={{display:"flex",gap:6}}><button style={{padding:"4px 8px",borderRadius:8,border:"1px solid #e5e7eb",background:"#f9fafb",fontSize:12,cursor:"pointer"}} onClick={()=>setEditRoom({id:r.id,name:r.name})}>✏️</button><button style={{padding:"4px 8px",borderRadius:8,border:"1px solid #FECACA",background:"#FEE2E2",color:"#EF4444",fontSize:12,cursor:"pointer"}} onClick={async()=>{if(!confirm(`Remover ${r.name}?`))return;await sb(`meeting_rooms?id=eq.${r.id}`,"DELETE");const rm=await sb("meeting_rooms?order=name");if(rm)setRooms(rm);}}>🗑️</button></div></div>)}
-                  </div>))}
-                </div>
-                <div style={{height:"1px",background:"#e5e7eb",margin:"8px 0 14px"}}/>
-                <div style={{fontWeight:700,fontSize:13,marginBottom:8}}>Especialistas</div>
-                <div style={{maxHeight:220,overflowY:"auto",marginBottom:8}}>
-                  {specs.map(c=>(<div key={c.id} style={{padding:"6px 0",borderBottom:"1px solid #f3f4f6"}}>
-                    {editSpec?.id===c.id?(<div><input style={{...C.inp,marginBottom:8,padding:"6px 10px"}} value={editSpec.name} onChange={e=>setEditSpec(p=>({...p,name:e.target.value}))} autoFocus/><div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:8}}>{QUEUES.map(q=>{const sel=editSpec.queues.includes(q.id);return<span key={q.id} style={{padding:"3px 10px",borderRadius:20,fontSize:11,cursor:"pointer",border:`2px solid ${sel?q.color:"#e5e7eb"}`,background:sel?q.light:"#fff",color:sel?q.color:"#888"}} onClick={()=>setEditSpec(p=>({...p,queues:sel?p.queues.filter(x=>x!==q.id):[...p.queues,q.id]}))}>{q.icon} {q.label}</span>;})}</div><div style={{display:"flex",gap:8}}><button style={{...C.btnP,padding:"6px 12px",fontSize:12}} onClick={async()=>{await sb(`specialists?id=eq.${c.id}`,"PATCH",{name:editSpec.name,queues:editSpec.queues});const sp=await sb("specialists?order=name");if(sp)setSpecs(sp);setEditSpec(null);showToast("Atualizado!");}}>✓ Salvar</button><button style={{...C.btnS,padding:"6px 10px",fontSize:12}} onClick={()=>setEditSpec(null)}>Cancelar</button></div></div>)
-                    :(<div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><div><div style={{fontWeight:600,fontSize:13}}>{c.name}</div><div style={{fontSize:11,color:"#888"}}>{c.queues.map(q=>QUEUES.find(x=>x.id===q)?.label).join(", ")}</div></div><div style={{display:"flex",gap:6}}><button style={{padding:"4px 8px",borderRadius:8,border:"1px solid #e5e7eb",background:"#f9fafb",fontSize:12,cursor:"pointer"}} onClick={()=>setEditSpec({id:c.id,name:c.name,queues:[...c.queues]})}>✏️</button><button style={{padding:"4px 8px",borderRadius:8,border:"1px solid #FECACA",background:"#FEE2E2",color:"#EF4444",fontSize:12,cursor:"pointer"}} onClick={()=>removeSpec(c.id)}>🗑️</button></div></div>)}
-                  </div>))}
-                </div>
-                {!addForm?(<button style={{...C.btnS,marginBottom:8}} onClick={()=>setAddForm(true)}>+ Adicionar especialista</button>):(<div style={{padding:14,borderRadius:12,border:"1px solid #e5e7eb",background:"#fafafa",marginBottom:8}}><div style={{marginBottom:8}}><div style={{fontSize:12,fontWeight:600,color:"#555",marginBottom:4}}>Nome</div><input style={C.inp} value={newC.name} onChange={e=>setNewC(p=>({...p,name:e.target.value}))}/></div><div style={{marginBottom:10}}><div style={{fontSize:12,fontWeight:600,color:"#555",marginBottom:6}}>Filas</div><div style={{display:"flex",gap:6,flexWrap:"wrap"}}>{QUEUES.map(q=>{const sel=newC.queues.includes(q.id);return<span key={q.id} style={{padding:"4px 12px",borderRadius:20,fontSize:12,cursor:"pointer",border:`2px solid ${sel?q.color:"#e5e7eb"}`,background:sel?q.light:"#fff",color:sel?q.color:"#888",fontWeight:sel?600:400}} onClick={()=>setNewC(p=>({...p,queues:sel?p.queues.filter(x=>x!==q.id):[...p.queues,q.id]}))}>{q.icon} {q.label}</span>;})}</div></div><div style={{display:"flex",gap:8}}><button style={C.btnP} onClick={addSpec}>Adicionar</button><button style={C.btnS} onClick={()=>setAddForm(false)}>Cancelar</button></div></div>)}
-                <div style={{height:"1px",background:"#e5e7eb",margin:"8px 0 12px"}}/>
-                <button style={{padding:"6px 12px",borderRadius:8,border:"1px solid #FECACA",background:"#FEE2E2",color:"#EF4444",fontSize:12,fontWeight:600,cursor:"pointer"}} onClick={async()=>{if(!confirm("Limpar histórico?"))return;await sb("history","DELETE");setHist([]);showToast("Histórico limpo!");}}>🗑️ Limpar histórico</button>
-              </>)}
-            </>
-          )}
         </div>
       )}
+
       {tab==="Painel"&&(<><div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(110px,1fr))",gap:10,marginBottom:16}}>{[{l:"Total",v:specs.length,c:"#7C3AED",bg:"#EDE9FE"},{l:"Ativos",v:totalActive,c:"#10B981",bg:"#D1FAE5"},{l:"Pausados",v:totalOff,c:"#F59E0B",bg:"#FEF3C7"},{l:"Novos hoje",v:normalToday,c:"#4F46E5",bg:"#E0E7FF"},{l:"Total hoje",v:totalToday,c:"#7C3AED",bg:"#EDE9FE"}].map(k=>(<div key={k.l} style={{background:k.bg,borderRadius:14,padding:"0.9rem",textAlign:"center"}}><div style={{fontSize:11,color:k.c,fontWeight:600,marginBottom:4,opacity:0.8}}>{k.l}</div><div style={{fontSize:26,fontWeight:800,color:k.c}}>{k.v}</div></div>))}</div>{specs.filter(c=>c.status!=="active").length>0&&<div style={C.card}><div style={{fontWeight:700,marginBottom:10,fontSize:14}}>⏸ Fora do rodízio</div>{specs.filter(c=>c.status!=="active").map(c=>(<div key={c.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:"1px solid #f3f4f6"}}><div style={{display:"flex",alignItems:"center",gap:8}}><div style={{width:30,height:30,borderRadius:"50%",background:"#f3f4f6",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,color:"#888"}}>{initials(c.name)}</div><div><div style={{fontWeight:600,fontSize:13}}>{c.name} {c.status==="vacation"?"🌴":"⏸"}</div>{c.note&&<div style={{fontSize:11,color:"#F59E0B"}}>{c.note}</div>}</div></div><div style={{display:"flex",gap:4}}>{c.queues.map(qId=>{const qi=QUEUES.find(x=>x.id===qId);return<span key={qId} style={{padding:"2px 8px",borderRadius:20,fontSize:11,fontWeight:600,background:qi?.light,color:qi?.color}}>{qi?.icon}</span>;})}</div></div>))}</div>}<div style={C.card}><div style={{fontWeight:700,marginBottom:12,fontSize:14}}>📊 Ranking do dia</div>{!ranking.length&&<div style={{fontSize:13,color:"#888",textAlign:"center",padding:"1rem"}}>Nenhum atendimento ainda.</div>}{ranking.map(([name,count],i)=>(<div key={name} style={{marginBottom:12}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}><div style={{display:"flex",alignItems:"center",gap:8}}><div style={{width:24,height:24,borderRadius:"50%",background:i===0?"#FEF3C7":i===1?"#f3f4f6":"#FEE2E2",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:800,color:i===0?"#B45309":i===1?"#555":"#EF4444"}}>{i+1}</div><span style={{fontSize:13,fontWeight:600}}>{name}</span></div><span style={{fontWeight:800,fontSize:14,color:"#7C3AED"}}>{count}</span></div><div style={{height:6,background:"#f3f4f6",borderRadius:4}}><div style={{height:6,borderRadius:4,background:"linear-gradient(90deg,#7C3AED,#4F46E5)",width:`${Math.round((count/maxRank)*100)}%`}}/></div></div>))}</div></>)}
       {tab==="Rodízio"&&<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(300px,1fr))",gap:16}}>{QUEUES.map(q=><QCard key={q.id} q={q}/>)}</div>}
       {tab==="Controle"&&<ControleTab/>}
