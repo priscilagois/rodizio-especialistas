@@ -200,15 +200,14 @@ export default function App(){
   async function removeSpec(id){if(!confirm("Remover?"))return;try{await sb(`specialists?id=eq.${id}`,"DELETE");const sp=await sb("specialists?order=name");if(sp)setSpecs(sp);}catch{}}
   async function addSpec(){if(!newC.name.trim())return;try{await sb("specialists","POST",{...newC,counts:{},ind:{},selecao:false});setNewC({name:"",queues:[],status:"active",note:""});setAddForm(false);showToast("Adicionado!");const sp=await sb("specialists?order=name");if(sp?.length)setSpecs(sp);}catch{showToast("Erro.","error");}}
 
+  const [novoDiaModal,setNovoDiaModal]=useState(false);
+  const [novoDiaDate,setNovoDiaDate]=useState("");
+
   async function iniciarNovoDia(){
-    // pede a data do dia que está sendo fechado
-    const yesterday=new Date();yesterday.setDate(yesterday.getDate()-1);
-    const defaultDate=yesterday.toISOString().split("T")[0];
-    const chosen=prompt("Informe a data do dia que está sendo fechado (deixe como está se for ontem):",defaultDate);
-    if(!chosen)return;
-    const parsed=new Date(chosen+"T12:00:00");
-    if(isNaN(parsed)){alert("Data inválida.");return;}
-    if(!confirm(`Fechar o dia ${parsed.toLocaleDateString("pt-BR")} e zerar os contadores?`))return;
+    if(!novoDiaDate){showToast("Selecione a data.","error");return;}
+    const parsed=new Date(novoDiaDate+"T12:00:00");
+    if(isNaN(parsed)){showToast("Data inválida.","error");return;}
+    setNovoDiaModal(false);
     const y=parsed;
     const yKey=y.toLocaleDateString("pt-BR");
     const yLabel=y.toLocaleDateString("pt-BR",{weekday:"long",day:"2-digit",month:"2-digit",year:"numeric"});
@@ -302,7 +301,22 @@ export default function App(){
         <div style={{fontSize:40,marginBottom:12}}>{icon}</div>
         <div style={{fontWeight:700,fontSize:20,marginBottom:6}}>{title}</div>
         <div style={{fontSize:14,color:"#888",marginBottom:24}}>{sub}</div>
-        {toast&&<div style={{marginBottom:12,padding:"8px",background:"#FEE2E2",color:"#EF4444",borderRadius:8,fontSize:13}}>{toast.msg}</div>}
+        {novoDiaModal&&(
+        <div style={{background:"#fff",borderRadius:16,padding:"1.5rem",border:"1px solid #e5e7eb",marginBottom:16,boxShadow:"0 4px 24px #7C3AED20"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+            <span style={{fontWeight:700,fontSize:15}}>☀️ Iniciar novo dia</span>
+            <button style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"#aaa"}} onClick={()=>setNovoDiaModal(false)}>×</button>
+          </div>
+          <div style={{fontSize:13,color:"#555",marginBottom:10}}>Selecione a data do dia que está sendo <strong>fechado</strong>:</div>
+          <input type="date" style={{...C.inp,marginBottom:16}} value={novoDiaDate} onChange={e=>setNovoDiaDate(e.target.value)}/>
+          {novoDiaDate&&<div style={{fontSize:12,color:"#888",marginBottom:12}}>📅 Fechando: {new Date(novoDiaDate+"T12:00:00").toLocaleDateString("pt-BR",{weekday:"long",day:"2-digit",month:"2-digit",year:"numeric"})}</div>}
+          <div style={{display:"flex",gap:8}}>
+            <button style={{...C.btnP,background:"#10B981"}} onClick={iniciarNovoDia}>Confirmar e zerar</button>
+            <button style={C.btnS} onClick={()=>setNovoDiaModal(false)}>Cancelar</button>
+          </div>
+        </div>
+      )}
+<div style={{marginBottom:12,padding:"8px",background:"#FEE2E2",color:"#EF4444",borderRadius:8,fontSize:13}}>{toast.msg}</div>}
         {content}
       </div>
     </div>
@@ -624,7 +638,7 @@ export default function App(){
           <div style={{fontSize:12,color:"#ffffff99",marginTop:2}}>{totalActive} ativos · {totalOff} fora</div>
         </div>
         <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-          <button style={{padding:"8px 16px",borderRadius:10,border:"none",background:"#10B981",color:"#fff",fontSize:13,fontWeight:600,cursor:"pointer"}} onClick={iniciarNovoDia}>☀️ Novo dia</button>
+          <button style={{padding:"8px 16px",borderRadius:10,border:"none",background:"#10B981",color:"#fff",fontSize:13,fontWeight:600,cursor:"pointer"}} onClick={()=>{const y=new Date();y.setDate(y.getDate()-1);setNovoDiaDate(y.toISOString().split("T")[0]);setNovoDiaModal(true);}}>☀️ Novo dia</button>
           <div style={{display:"flex",alignItems:"center",gap:6,background:"#ffffff20",borderRadius:10,padding:"6px 12px"}}>
             <span style={{fontSize:13,color:"#fff"}}>👤 {userName}{userIsAdmin&&<span style={{background:"#10B981",borderRadius:6,padding:"1px 6px",fontSize:11,marginLeft:6}}>Admin</span>}</span>
             <button style={{background:"none",border:"none",color:"#ffffff80",fontSize:11,cursor:"pointer"}} onClick={handleLogout}>sair</button>
