@@ -202,16 +202,26 @@ export default function App(){
     const start_time=`${bkForm.start_hour}:${bkForm.start_min}`;
     const end_time=`${bkForm.end_hour}:${bkForm.end_min}`;
     if(!bkForm.room_id||!bkForm.specialist_name||!bkForm.booking_date){showToast("Preencha todos os campos.","error");return;}
-    const room=rooms.find(r=>r.id==bkForm.room_id);
-    const conflict=bookings.find(b=>b.room_id==bkForm.room_id&&b.booking_date===bkForm.booking_date&&!(end_time<=b.start_time||start_time>=b.end_time));
+    const room=rooms.find(r=>String(r.id)===String(bkForm.room_id));
+    const conflict=bookings.find(b=>String(b.room_id)===String(bkForm.room_id)&&b.booking_date===bkForm.booking_date&&!(end_time<=b.start_time||start_time>=b.end_time));
     if(conflict){showToast(`Conflito: ${conflict.specialist_name} (${conflict.start_time}–${conflict.end_time}).`,"error");return;}
     try{
-      await sb("meeting_bookings","POST",{...bkForm,start_time,end_time,notes:bkNotesRef.current,room_id:parseInt(bkForm.room_id),room_name:room?.name||"",booked_by:userName});
+      const payload={
+        room_id:parseInt(bkForm.room_id),
+        room_name:room?.name||"",
+        specialist_name:bkForm.specialist_name,
+        booking_date:bkForm.booking_date,
+        start_time,
+        end_time,
+        notes:bkNotes,
+        booked_by:userName
+      };
+      await sb("meeting_bookings","POST",payload);
       showToast("Reserva criada!");
       setBkForm({room_id:"",specialist_name:"",booking_date:"",start_hour:"09",start_min:"00",end_hour:"10",end_min:"00"});
-      bkNotesRef.current="";setBkNotes("");
+      setBkNotes("");
       const bk=await sb("meeting_bookings?order=booking_date,start_time");if(bk)setBookings(bk);
-    }catch{showToast("Erro.","error");}
+    }catch(e){console.error(e);showToast("Erro ao salvar reserva.","error");}
   }
   async function deleteBooking(id){if(!confirm("Cancelar?"))return;try{await sb(`meeting_bookings?id=eq.${id}`,"DELETE");const bk=await sb("meeting_bookings?order=booking_date,start_time");if(bk)setBookings(bk);}catch{}}
 
