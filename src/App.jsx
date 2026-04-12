@@ -462,6 +462,17 @@ export default function App(){
             </div>);
           })}
         </div>
+        <div style={{fontWeight:700,fontSize:14,marginBottom:10,marginTop:8}}>🗂️ Histórico de reservas</div>
+        <div style={C.card}>
+          {!bookings.filter(b=>b.booking_date<todayISOStr).length&&<div style={{fontSize:13,color:"#888",textAlign:"center",padding:"1rem"}}>Nenhum histórico.</div>}
+          {bookings.filter(b=>b.booking_date<todayISOStr).sort((a,b)=>b.booking_date.localeCompare(a.booking_date)||b.start_time.localeCompare(a.start_time)).map((b,i,arr)=>{
+            const ri=rooms.findIndex(r=>String(r.id)===String(b.room_id)),col=RCOLS[ri>=0?ri%RCOLS.length:0];
+            return(<div key={b.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderBottom:i<arr.length-1?"1px solid #f3f4f6":"none",opacity:0.7}}>
+              <div style={{width:8,height:8,borderRadius:"50%",background:col,flexShrink:0}}/>
+              <div style={{flex:1}}><span style={{fontWeight:600,fontSize:13}}>{b.specialist_name}</span><span style={{fontSize:12,color:"#888",marginLeft:8}}>{b.room_name} · {toBR(b.booking_date)} · {b.start_time}–{b.end_time}</span>{b.notes&&<span style={{fontSize:11,color:"#aaa",marginLeft:8}}>· {b.notes}</span>}</div>
+            </div>);
+          })}
+        </div>
       </div>
     );
   }
