@@ -34,7 +34,7 @@ const INIT_SPECS=[
   {id:17,name:"Elisa",queues:["Vistos"],status:"active",note:"",counts:{},ind:{},selecao:false},
 ];
 const INIT_SDRS=[{id:1,name:"Gabriella"},{id:2,name:"Elisa"},{id:3,name:"Lorena"},{id:4,name:"Amanda"}];
-const INIT_ROOMS=[{id:1,name:"Walt Disney",color:"#7C3AED"},{id:2,name:"Roy Disney",color:"#0EA5E9"},{id:3,name:"Lumiere",color:"#10B981"}];
+const INIT_ROOMS=[{id:7,name:"Walt Disney",color:"#7C3AED"},{id:8,name:"Roy Disney",color:"#0EA5E9"},{id:9,name:"Lumiere",color:"#10B981"}];
 
 const SB_URL="https://kmcmepemxyoxvzjzanou.supabase.co";
 const SB_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImttY21lcGVteHlveHZ6anphbm91Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU2NDUxMTMsImV4cCI6MjA5MTIyMTExM30.CRMg94r5WbP4s2HNeRxMRWXs-jF7EfcMwihGrLfvpCo";
