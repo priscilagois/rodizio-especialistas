@@ -305,26 +305,30 @@ export default function App(){
             const off=c.status!=="active",isVac=c.status==="vacation",isPaused=c.status==="paused";
             const credits=c.ind?.[qId]||0,tot=totalOf(c,qId),prev=prevTotal(c.name,qId);
             return(
-              <div key={c.id} style={{display:"flex",alignItems:"center",gap:8,padding:"7px 6px",borderBottom:i<allInQ.length-1?"1px solid #f3f4f6":"none",opacity:off?0.45:1}}>
-                <div style={{width:30,height:30,borderRadius:"50%",background:off?"#e5e7eb":q.light,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,color:off?"#999":q.color,flexShrink:0}}>{initials(c.name)}</div>
-                <div style={{flex:1,minWidth:0}}>
-                  <div style={{fontSize:13,fontWeight:600,display:"flex",alignItems:"center",gap:4}}>
-                    <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.name}</span>
-                    {isVac&&<span>🌴</span>}{isPaused&&<span>⏸</span>}{c.selecao&&<span>⭐</span>}
+              <div key={c.id} style={{padding:"8px 6px",borderBottom:i<allInQ.length-1?"1px solid #f3f4f6":"none",opacity:off?0.45:1}}>
+                {/* Linha 1: avatar + nome + status + contador */}
+                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:5}}>
+                  <div style={{width:28,height:28,borderRadius:"50%",background:off?"#e5e7eb":q.light,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,color:off?"#999":q.color,flexShrink:0}}>{initials(c.name)}</div>
+                  <div style={{flex:1}}>
+                    <div style={{fontSize:13,fontWeight:700,display:"flex",alignItems:"center",gap:4,flexWrap:"wrap"}}>
+                      <span>{c.name}</span>
+                      {isVac&&<span title="Férias" style={{fontSize:12}}>🌴</span>}
+                      {isPaused&&<span title="Pausado" style={{fontSize:12}}>⏸</span>}
+                      {c.selecao&&<span title="Seleção especial" style={{fontSize:12}}>⭐</span>}
+                    </div>
+                    {c.note&&<div style={{fontSize:11,color:"#F59E0B"}}>{c.note}</div>}
+                    {prev>0&&tot===0&&<div style={{fontSize:10,color:"#aaa"}}>ontem: {prev}</div>}
                   </div>
-                  {c.note&&<div style={{fontSize:11,color:"#F59E0B"}}>{c.note}</div>}
-                  {prev>0&&tot===0&&<div style={{fontSize:10,color:"#aaa"}}>ontem: {prev}</div>}
+                  <span style={{padding:"2px 10px",borderRadius:20,fontSize:12,fontWeight:800,background:q.light,color:q.color,flexShrink:0}}>{tot}</span>
                 </div>
-                <div style={{display:"flex",gap:4,alignItems:"center",flexShrink:0}}>
-                  <span style={{padding:"2px 8px",borderRadius:20,fontSize:11,fontWeight:700,background:q.light,color:q.color}}>{tot}</span>
-                  <span style={{padding:"2px 8px",borderRadius:20,fontSize:11,fontWeight:700,background:credits>0?"#FEF3C7":"#f3f4f6",color:credits>0?"#B45309":"#aaa",cursor:"pointer"}} onClick={()=>addInd(qId,c.id)}>📌{credits}</span>
-                  {adminOk&&<span style={{padding:"2px 8px",borderRadius:20,fontSize:11,fontWeight:700,background:"#D1FAE5",color:"#10B981",cursor:"pointer"}} onClick={()=>addExtra(qId,c.id)}>+1</span>}
-                </div>
-                <div style={{display:"flex",gap:3,flexShrink:0}}>
-                  <button style={{width:26,height:26,borderRadius:8,border:"none",background:c.selecao?"#FEF3C7":"#f3f4f6",cursor:"pointer",fontSize:12}} onClick={()=>toggleSel(c)}>⭐</button>
-                  <button style={{width:26,height:26,borderRadius:8,border:"none",background:isVac?"#D1FAE5":"#f3f4f6",cursor:"pointer",fontSize:12}} onClick={()=>{if(!isVac){setMTxt("");setModal({type:"vacation",spec:c});}else setVacation(c,false);}}>🌴</button>
-                  <button style={{width:26,height:26,borderRadius:8,border:"none",background:isPaused?"#EDE9FE":"#f3f4f6",cursor:"pointer",fontSize:12}} onClick={()=>{if(!isPaused){setMTxt("");setModal({type:"pausar",spec:c});}else setPaused(c,false);}}>⏸</button>
-                  <button style={{width:26,height:26,borderRadius:8,border:"none",background:"#f3f4f6",cursor:"pointer",fontSize:12}} onClick={()=>{setMTxt(c.note||"");setModal({type:"nota",spec:c});}}>📝</button>
+                {/* Linha 2: ações */}
+                <div style={{display:"flex",gap:4,alignItems:"center",paddingLeft:36,flexWrap:"wrap"}}>
+                  <button style={{padding:"3px 9px",borderRadius:8,border:"none",background:c.selecao?"#FEF3C7":"#f3f4f6",cursor:"pointer",fontSize:11,fontWeight:600,color:c.selecao?"#B45309":"#888"}} onClick={()=>toggleSel(c)}>⭐ Seleção</button>
+                  <button style={{padding:"3px 9px",borderRadius:8,border:"none",background:isVac?"#D1FAE5":"#f3f4f6",cursor:"pointer",fontSize:11,fontWeight:600,color:isVac?"#059669":"#888"}} onClick={()=>{if(!isVac){setMTxt("");setModal({type:"vacation",spec:c});}else setVacation(c,false);}}>🌴 Férias</button>
+                  <button style={{padding:"3px 9px",borderRadius:8,border:"none",background:isPaused?"#EDE9FE":"#f3f4f6",cursor:"pointer",fontSize:11,fontWeight:600,color:isPaused?"#7C3AED":"#888"}} onClick={()=>{if(!isPaused){setMTxt("");setModal({type:"pausar",spec:c});}else setPaused(c,false);}}>⏸ Pausa</button>
+                  <button style={{padding:"3px 9px",borderRadius:8,border:"none",background:"#f3f4f6",cursor:"pointer",fontSize:11,fontWeight:600,color:"#888"}} onClick={()=>{setMTxt(c.note||"");setModal({type:"nota",spec:c});}}>📝 Nota</button>
+                  <span style={{padding:"3px 9px",borderRadius:8,fontSize:11,fontWeight:600,background:credits>0?"#FEF3C7":"#f3f4f6",color:credits>0?"#B45309":"#aaa",cursor:"pointer"}} onClick={()=>addInd(qId,c.id)}>📌 {credits}</span>
+                  <span style={{padding:"3px 9px",borderRadius:8,fontSize:11,fontWeight:600,background:"#D1FAE5",color:"#10B981",cursor:"pointer"}} onClick={()=>setModal({type:"manual",spec:c,qId})}>+1 Avulso</span>
                 </div>
               </div>
             );
@@ -467,9 +471,10 @@ export default function App(){
           {!bookings.filter(b=>b.booking_date<todayISOStr).length&&<div style={{fontSize:13,color:"#888",textAlign:"center",padding:"1rem"}}>Nenhum histórico.</div>}
           {bookings.filter(b=>b.booking_date<todayISOStr).sort((a,b)=>b.booking_date.localeCompare(a.booking_date)||b.start_time.localeCompare(a.start_time)).map((b,i,arr)=>{
             const ri=rooms.findIndex(r=>String(r.id)===String(b.room_id)),col=RCOLS[ri>=0?ri%RCOLS.length:0];
-            return(<div key={b.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderBottom:i<arr.length-1?"1px solid #f3f4f6":"none",opacity:0.7}}>
+            return(              <div key={b.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderBottom:i<arr.length-1?"1px solid #f3f4f6":"none",opacity:0.7}}>
               <div style={{width:8,height:8,borderRadius:"50%",background:col,flexShrink:0}}/>
               <div style={{flex:1}}><span style={{fontWeight:600,fontSize:13}}>{b.specialist_name}</span><span style={{fontSize:12,color:"#888",marginLeft:8}}>{b.room_name} · {toBR(b.booking_date)} · {b.start_time}–{b.end_time}</span>{b.notes&&<span style={{fontSize:11,color:"#aaa",marginLeft:8}}>· {b.notes}</span>}</div>
+              {adminOk&&<button style={{background:"#FEE2E2",border:"none",borderRadius:8,padding:"4px 8px",cursor:"pointer",fontSize:12,color:"#EF4444"}} onClick={()=>deleteBooking(b.id)}>✕</button>}
             </div>);
           })}
         </div>
@@ -562,7 +567,30 @@ export default function App(){
         </div>
       )}
       {tab==="Painel"&&(<><div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(110px,1fr))",gap:10,marginBottom:16}}>{[{l:"Total",v:specs.length,c:"#7C3AED",bg:"#EDE9FE"},{l:"Ativos",v:totalActive,c:"#10B981",bg:"#D1FAE5"},{l:"Pausados",v:totalOff,c:"#F59E0B",bg:"#FEF3C7"},{l:"Novos hoje",v:normalToday,c:"#4F46E5",bg:"#E0E7FF"},{l:"Total hoje",v:totalToday,c:"#7C3AED",bg:"#EDE9FE"}].map(k=>(<div key={k.l} style={{background:k.bg,borderRadius:14,padding:"0.9rem",textAlign:"center"}}><div style={{fontSize:11,color:k.c,fontWeight:600,marginBottom:4,opacity:0.8}}>{k.l}</div><div style={{fontSize:26,fontWeight:800,color:k.c}}>{k.v}</div></div>))}</div>{specs.filter(c=>c.status!=="active").length>0&&<div style={C.card}><div style={{fontWeight:700,marginBottom:10,fontSize:14}}>⏸ Fora do rodízio</div>{specs.filter(c=>c.status!=="active").map(c=>(<div key={c.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:"1px solid #f3f4f6"}}><div style={{display:"flex",alignItems:"center",gap:8}}><div style={{width:30,height:30,borderRadius:"50%",background:"#f3f4f6",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,color:"#888"}}>{initials(c.name)}</div><div><div style={{fontWeight:600,fontSize:13}}>{c.name} {c.status==="vacation"?"🌴":"⏸"}</div>{c.note&&<div style={{fontSize:11,color:"#F59E0B"}}>{c.note}</div>}</div></div><div style={{display:"flex",gap:4}}>{c.queues.map(qId=>{const qi=QUEUES.find(x=>x.id===qId);return<span key={qId} style={{padding:"2px 8px",borderRadius:20,fontSize:11,fontWeight:600,background:qi?.light,color:qi?.color}}>{qi?.icon}</span>;})}</div></div>))}</div>}<div style={C.card}><div style={{fontWeight:700,marginBottom:12,fontSize:14}}>📊 Ranking do dia</div>{!ranking.length&&<div style={{fontSize:13,color:"#888",textAlign:"center",padding:"1rem"}}>Nenhum atendimento ainda.</div>}{ranking.map(([name,count],i)=>(<div key={name} style={{marginBottom:12}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}><div style={{display:"flex",alignItems:"center",gap:8}}><div style={{width:24,height:24,borderRadius:"50%",background:i===0?"#FEF3C7":i===1?"#f3f4f6":"#FEE2E2",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:800,color:i===0?"#B45309":i===1?"#555":"#EF4444"}}>{i+1}</div><span style={{fontSize:13,fontWeight:600}}>{name}</span></div><span style={{fontWeight:800,fontSize:14,color:"#7C3AED"}}>{count}</span></div><div style={{height:6,background:"#f3f4f6",borderRadius:4}}><div style={{height:6,borderRadius:4,background:"linear-gradient(90deg,#7C3AED,#4F46E5)",width:`${Math.round((count/maxRank)*100)}%`}}/></div></div>))}</div></>)}
-      {tab==="Rodízio"&&<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(300px,1fr))",gap:16}}>{QUEUES.map(q=><QCard key={q.id} q={q}/>)}</div>}
+      {tab==="Rodízio"&&<>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(300px,1fr))",gap:16}}>{QUEUES.map(q=><QCard key={q.id} q={q}/>)}</div>
+        <div style={{...C.card,marginTop:8,borderTop:"3px solid #7C3AED"}}>
+          <div style={{fontWeight:700,fontSize:13,marginBottom:12,color:"#7C3AED"}}>📖 Legenda</div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))",gap:8}}>
+            {[
+              {icon:"🔄",label:"Próximo",desc:"Avança o rodízio normal"},
+              {icon:"⭐",label:"Seleção",desc:"Marca para atendimentos especiais"},
+              {icon:"🌴",label:"Férias",desc:"Coloca/retira de férias"},
+              {icon:"⏸",label:"Pausa",desc:"Pausa/reativa por outro motivo"},
+              {icon:"📝",label:"Nota",desc:"Adiciona anotação interna"},
+              {icon:"📌",label:"Indicação",desc:"Créditos de indicação direta"},
+              {icon:"+1",label:"Avulso",desc:"Carteirização direta por outro motivo (telefonema, presencial, etc.)"},
+              {icon:"🆕",label:"Novos hoje",desc:"Total de clientes novos hoje neste setor"},
+              {icon:"✅",label:"Último",desc:"Último especialista atendido neste setor"},
+            ].map(it=>(
+              <div key={it.icon} style={{display:"flex",alignItems:"flex-start",gap:8,padding:"8px",background:"#f9fafb",borderRadius:10}}>
+                <span style={{fontSize:16,flexShrink:0,minWidth:24,textAlign:"center"}}>{it.icon}</span>
+                <div><div style={{fontWeight:600,fontSize:12}}>{it.label}</div><div style={{fontSize:11,color:"#888"}}>{it.desc}</div></div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </>}
       {tab==="Controle"&&<ControleTab/>}
       {tab==="Salas"&&<SalasTab/>}
       {tab==="Presença"&&<PresencaTab/>}
