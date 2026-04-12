@@ -50,6 +50,8 @@ async function rpc(fn,params){
 }
 
 const todayKey=()=>new Date().toLocaleDateString("pt-BR");
+const todayISO=()=>new Date().toISOString().split("T")[0];
+const toBR=d=>d?d.split("-").reverse().join("/"):"";
 const yesterdayKey=()=>{const d=new Date();d.setDate(d.getDate()-1);return d.toLocaleDateString("pt-BR");};
 const initials=n=>n.replace(/[^A-Za-záéíóúÁÉÍÓÚ ]/g,"").trim().split(" ").slice(0,2).map(w=>w[0]?.toUpperCase()||"").join("");
 const isAdmin=name=>ADMIN_NAMES.includes(name?.toLowerCase().trim());
@@ -61,7 +63,7 @@ export default function App(){
   const [evts,setEvts]=useState([]);
   const [dayLog,setDayLog]=useState([]);
   const [lastMap,setLastMap]=useState({});
-  const [prevCounts,setPrevCounts]=useState({});// contagens do dia anterior por fila
+  const [prevCounts,setPrevCounts]=useState({});
   const [sdrs,setSdrs]=useState(INIT_SDRS);
   const [rooms,setRooms]=useState(INIT_ROOMS);
   const [bookings,setBookings]=useState([]);
@@ -83,34 +85,24 @@ export default function App(){
   const [ctrlM,setCtrlM]=useState({y:new Date().getFullYear(),m:new Date().getMonth()});
   const [ctrlQ,setCtrlQ]=useState("USA");
   const [presM,setPresM]=useState({y:new Date().getFullYear(),m:new Date().getMonth()});
-  const [bkForm,setBkForm]=useState({room_id:"",specialist_name:"",booking_date:"",start_time:"09:00",end_time:"10:00",notes:""});
+  // bkForm sem notes para evitar perda de foco
+  const [bkForm,setBkForm]=useState({room_id:"",specialist_name:"",booking_date:"",start_time:"09:00",end_time:"10:00"});
+  const [bkNotes,setBkNotes]=useState("");
   const notifRef=useRef(new Set());
 
-  // Auth state
-  const [authStep,setAuthStep]=useState("idle");// idle | name | pin_create | pin_enter | done
+  const [authStep,setAuthStep]=useState("idle");
   const [tmpName,setTmpName]=useState("");
   const [tmpPin,setTmpPin]=useState("");
   const [tmpPin2,setTmpPin2]=useState("");
   const [userName,setUserName]=useState("");
   const [userIsAdmin,setUserIsAdmin]=useState(false);
 
-  // On mount: check stored user
   useEffect(()=>{
     const stored=localStorage.getItem("rodizio_user");
     const storedPin=localStorage.getItem("rodizio_pin_"+stored);
-    if(stored&&storedPin){
-      // has pin stored, need to verify
-      setTmpName(stored);
-      setAuthStep("pin_enter");
-    } else if(stored&&isAdmin(stored)){
-      // admin stored but no pin needed
-      setUserName(stored);
-      setUserIsAdmin(true);
-      setAdminOk(true);
-      setAuthStep("done");
-    } else {
-      setAuthStep("name");
-    }
+    if(stored&&storedPin){setTmpName(stored);setAuthStep("pin_enter");}
+    else if(stored&&isAdmin(stored)){setUserName(stored);setUserIsAdmin(true);setAdminOk(true);setAuthStep("done");}
+    else{setAuthStep("name");}
   },[]);
 
   useEffect(()=>{
@@ -118,26 +110,16 @@ export default function App(){
     (async()=>{
       try{
         const [sp,hi,ev,dc,la,sd,rm,bk,pr]=await Promise.all([
-          sb("specialists?order=name"),
-          sb("history?order=created_at.desc&limit=1000"),
-          sb("events?order=created_at.desc&limit=500"),
-          sb("day_closings?order=created_at.desc&limit=90"),
-          sb("last_assigned?select=*"),
-          sb("sdrs?order=name"),
-          sb("meeting_rooms?order=name"),
-          sb("meeting_bookings?order=booking_date,start_time"),
-          sb("presence_calendar?order=presence_date"),
+          sb("specialists?order=name"),sb("history?order=created_at.desc&limit=1000"),
+          sb("events?order=created_at.desc&limit=500"),sb("day_closings?order=created_at.desc&limit=90"),
+          sb("last_assigned?select=*"),sb("sdrs?order=name"),sb("meeting_rooms?order=name"),
+          sb("meeting_bookings?order=booking_date,start_time"),sb("presence_calendar?order=presence_date"),
         ]);
         if(sp?.length)setSpecs(sp);
         if(hi?.length){
           setHist(hi);
-          // build prev day counts
-          const yk=yesterdayKey();
-          const pc={};
-          hi.filter(h=>h.date_key===yk).forEach(h=>{
-            if(!pc[h.queue_id])pc[h.queue_id]={};
-            pc[h.queue_id][h.spec_name]=(pc[h.queue_id][h.spec_name]||0)+1;
-          });
+          const yk=yesterdayKey(),pc={};
+          hi.filter(h=>h.date_key===yk).forEach(h=>{if(!pc[h.queue_id])pc[h.queue_id]={};pc[h.queue_id][h.spec_name]=(pc[h.queue_id][h.spec_name]||0)+1;});
           setPrevCounts(pc);
         }
         if(ev?.length)setEvts(ev);
@@ -154,105 +136,42 @@ export default function App(){
 
   function showToast(msg,type="success"){setToast({msg,type});setTimeout(()=>setToast(null),2800);}
   const today=todayKey();
+  const todayISOStr=todayISO();
 
-  // totalOf uses today's counts; for ordering uses prevCounts when today is zero
   function totalOf(c,qId){return(c.counts?.[qId]||0)+(c.ind?.[qId]||0);}
   function prevTotal(name,qId){return prevCounts[qId]?.[name]||0;}
-  function orderScore(c,qId){
-    const todayT=totalOf(c,qId);
-    // if today has no assignments yet, use yesterday's count as tiebreaker
-    return todayT*10000+(todayT===0?prevTotal(c.name,qId):0);
-  }
+  function orderScore(c,qId){const t=totalOf(c,qId);return t*10000+(t===0?prevTotal(c.name,qId):0);}
   function activePool(qId){return specs.filter(c=>c.status==="active"&&c.queues.includes(qId)).sort((a,b)=>orderScore(a,qId)-orderScore(b,qId)||a.name.localeCompare(b.name,"pt"));}
   function selPool(qId){return specs.filter(c=>c.status==="active"&&c.queues.includes(qId)&&c.selecao).sort((a,b)=>orderScore(a,qId)-orderScore(b,qId)||a.name.localeCompare(b.name,"pt"));}
 
-  // Auth handlers
   function handleNameSubmit(){
-    const name=tmpName.trim();
-    if(!name)return;
-    if(isAdmin(name)){
-      // admin: ask for admin pin
-      setAuthStep("pin_enter_admin");
-      return;
-    }
-    const storedPin=localStorage.getItem("rodizio_pin_"+name);
-    if(storedPin){
-      setAuthStep("pin_enter");
-    } else {
-      setAuthStep("pin_create");
-    }
+    const name=tmpName.trim();if(!name)return;
+    if(isAdmin(name)){setAuthStep("pin_enter_admin");return;}
+    const sp=localStorage.getItem("rodizio_pin_"+name);
+    setAuthStep(sp?"pin_enter":"pin_create");
   }
-
   function handleAdminPinSubmit(){
-    if(tmpPin===ADMIN_PIN){
-      const name=tmpName.trim();
-      localStorage.setItem("rodizio_user",name);
-      setUserName(name);
-      setUserIsAdmin(true);
-      setAdminOk(true);
-      setAuthStep("done");
-      setTmpPin("");
-    } else {
-      showToast("PIN incorreto","error");
-      setTmpPin("");
-    }
+    if(tmpPin===ADMIN_PIN){const name=tmpName.trim();localStorage.setItem("rodizio_user",name);setUserName(name);setUserIsAdmin(true);setAdminOk(true);setAuthStep("done");setTmpPin("");}
+    else{showToast("PIN incorreto","error");setTmpPin("");}
   }
-
   function handlePinCreate(){
     if(tmpPin.length<4){showToast("PIN deve ter ao menos 4 caracteres","error");return;}
     if(tmpPin!==tmpPin2){showToast("PINs não coincidem","error");return;}
-    const name=tmpName.trim();
-    localStorage.setItem("rodizio_pin_"+name,tmpPin);
-    localStorage.setItem("rodizio_user",name);
-    setUserName(name);
-    setUserIsAdmin(false);
-    setAdminOk(false);
-    setAuthStep("done");
-    setTmpPin("");setTmpPin2("");
+    const name=tmpName.trim();localStorage.setItem("rodizio_pin_"+name,tmpPin);localStorage.setItem("rodizio_user",name);
+    setUserName(name);setUserIsAdmin(false);setAdminOk(false);setAuthStep("done");setTmpPin("");setTmpPin2("");
   }
-
   function handlePinEnter(){
-    const name=tmpName.trim();
-    const stored=localStorage.getItem("rodizio_pin_"+name);
-    if(tmpPin===stored){
-      localStorage.setItem("rodizio_user",name);
-      setUserName(name);
-      setUserIsAdmin(false);
-      setAdminOk(false);
-      setAuthStep("done");
-      setTmpPin("");
-    } else {
-      showToast("PIN incorreto","error");
-      setTmpPin("");
-    }
+    const name=tmpName.trim(),stored=localStorage.getItem("rodizio_pin_"+name);
+    if(tmpPin===stored){localStorage.setItem("rodizio_user",name);setUserName(name);setUserIsAdmin(false);setAdminOk(false);setAuthStep("done");setTmpPin("");}
+    else{showToast("PIN incorreto","error");setTmpPin("");}
   }
+  function handleLogout(){localStorage.removeItem("rodizio_user");setUserName("");setTmpName("");setTmpPin("");setTmpPin2("");setUserIsAdmin(false);setAdminOk(false);setAuthStep("name");}
 
-  function handleLogout(){
-    localStorage.removeItem("rodizio_user");
-    setUserName("");setTmpName("");setTmpPin("");setTmpPin2("");
-    setUserIsAdmin(false);setAdminOk(false);
-    setAuthStep("name");
-  }
-
-  // Rotate functions
   async function rotateNormal(qId){if(saving)return;setSaving(true);try{const res=await rpc("assign_next",{p_queue_id:qId,p_type:"normal",p_user:userName});if(res?.error)showToast("Nenhum disponível.","error");else{showToast(`Atribuído: ${res.specialist.name}`);const[sp,la]=await Promise.all([sb("specialists?order=name"),sb("last_assigned?select=*")]);if(sp?.length)setSpecs(sp);const lm={};(la||[]).forEach(r=>{lm[r.queue_id]={name:r.spec_name,type:r.type};});setLastMap(lm);const hi=await sb("history?order=created_at.desc&limit=1000");if(hi?.length)setHist(hi);}}catch{showToast("Erro.","error");}setSaving(false);}
   async function rotateSelecao(qId){const pool=selPool(qId);if(!pool.length){showToast("Nenhum com ⭐.","error");return;}if(saving)return;setSaving(true);try{const spec=pool[0];await sb(`specialists?id=eq.${spec.id}`,"PATCH",{ind:{...spec.ind,[qId]:(spec.ind?.[qId]||0)+1}});const res=await rpc("assign_next",{p_queue_id:qId,p_type:"selecao",p_user:userName});if(res?.error)showToast("Erro.","error");else{showToast(`Seleção: ${res.specialist.name}`);const sp=await sb("specialists?order=name");if(sp?.length)setSpecs(sp);}}catch{showToast("Erro.","error");}setSaving(false);}
   async function rotateRecart(qId){if(saving)return;setSaving(true);try{const res=await rpc("assign_recart",{p_queue_id:qId,p_user:userName});if(res?.error)showToast("Nenhum disponível.","error");else{showToast(`Recart. Férias: ${res.specialist.name}`);const sp=await sb("specialists?order=name");if(sp?.length)setSpecs(sp);}}catch{showToast("Erro.","error");}setSaving(false);}
-
   async function addInd(qId,specId){const spec=specs.find(c=>c.id===specId);if(!spec)return;try{await sb(`specialists?id=eq.${specId}`,"PATCH",{ind:{...spec.ind,[qId]:(spec.ind?.[qId]||0)+1}});await sb("history","POST",{spec_name:spec.name,queue_id:qId,type:"indicacao",by_user:userName,date_key:today});showToast(`Indicação: ${spec.name}`);const sp=await sb("specialists?order=name");if(sp?.length)setSpecs(sp);}catch{showToast("Erro.","error");}}
-
-  // Admin: add extra client to any specialist
-  async function addExtra(qId,specId){
-    if(!adminOk)return;
-    const spec=specs.find(c=>c.id===specId);if(!spec)return;
-    try{
-      await sb(`specialists?id=eq.${specId}`,"PATCH",{counts:{...spec.counts,[qId]:(spec.counts?.[qId]||0)+1}});
-      await sb("history","POST",{spec_name:spec.name,queue_id:qId,type:"extra_admin",by_user:userName,date_key:today});
-      showToast(`+1 extra: ${spec.name}`);
-      const sp=await sb("specialists?order=name");if(sp?.length)setSpecs(sp);
-    }catch{showToast("Erro.","error");}
-  }
-
+  async function addExtra(qId,specId){if(!adminOk)return;const spec=specs.find(c=>c.id===specId);if(!spec)return;try{await sb(`specialists?id=eq.${specId}`,"PATCH",{counts:{...spec.counts,[qId]:(spec.counts?.[qId]||0)+1}});await sb("history","POST",{spec_name:spec.name,queue_id:qId,type:"extra_admin",by_user:userName,date_key:today});showToast(`+1 extra: ${spec.name}`);const sp=await sb("specialists?order=name");if(sp?.length)setSpecs(sp);}catch{showToast("Erro.","error");}}
   async function toggleSel(spec){try{await sb(`specialists?id=eq.${spec.id}`,"PATCH",{selecao:!spec.selecao});const sp=await sb("specialists?order=name");if(sp?.length)setSpecs(sp);}catch{}}
   async function setVacation(spec,on,note=""){try{await sb(`specialists?id=eq.${spec.id}`,"PATCH",{status:on?"vacation":"active",note:on?note:spec.note});await sb("events","POST",{type:on?"pausa_inicio":"pausa_fim",spec_name:spec.name,detail:on?note:"Retornou de férias",by_user:userName,date_key:today});showToast(on?"Férias registradas!":"Retorno registrado!");const sp=await sb("specialists?order=name");if(sp?.length)setSpecs(sp);const ev=await sb("events?order=created_at.desc&limit=500");if(ev?.length)setEvts(ev);}catch{showToast("Erro.","error");}}
   async function setPaused(spec,on,note=""){try{await sb(`specialists?id=eq.${spec.id}`,"PATCH",{status:on?"paused":"active",note:on?note:spec.note});await sb("events","POST",{type:on?"pausa_inicio":"pausa_fim",spec_name:spec.name,detail:on?note:"Reativado",by_user:userName,date_key:today});showToast(on?"Pausado!":"Reativado!");const sp=await sb("specialists?order=name");if(sp?.length)setSpecs(sp);}catch{showToast("Erro.","error");}}
@@ -271,12 +190,7 @@ export default function App(){
       for(const s of specs)await sb(`specialists?id=eq.${s.id}`,"PATCH",{counts:{}});
       await sb("last_assigned","DELETE");
       setLastMap({});
-      // rebuild prevCounts from yesterday's history
-      const pc={};
-      hist.filter(h=>h.date_key===yKey).forEach(h=>{
-        if(!pc[h.queue_id])pc[h.queue_id]={};
-        pc[h.queue_id][h.spec_name]=(pc[h.queue_id][h.spec_name]||0)+1;
-      });
+      const pc={};hist.filter(h=>h.date_key===yKey).forEach(h=>{if(!pc[h.queue_id])pc[h.queue_id]={};pc[h.queue_id][h.spec_name]=(pc[h.queue_id][h.spec_name]||0)+1;});
       setPrevCounts(pc);
       showToast("Novo dia iniciado!");
       const sp=await sb("specialists?order=name");if(sp?.length)setSpecs(sp);
@@ -288,13 +202,17 @@ export default function App(){
     const room=rooms.find(r=>r.id==bkForm.room_id);
     const conflict=bookings.find(b=>b.room_id==bkForm.room_id&&b.booking_date===bkForm.booking_date&&!(bkForm.end_time<=b.start_time||bkForm.start_time>=b.end_time));
     if(conflict){showToast(`Conflito: ${conflict.specialist_name} (${conflict.start_time}–${conflict.end_time}).`,"error");return;}
-    try{await sb("meeting_bookings","POST",{...bkForm,room_id:parseInt(bkForm.room_id),room_name:room?.name||"",booked_by:userName});showToast("Reserva criada!");setBkForm({room_id:"",specialist_name:"",booking_date:"",start_time:"09:00",end_time:"10:00",notes:""});const bk=await sb("meeting_bookings?order=booking_date,start_time");if(bk)setBookings(bk);}
-    catch{showToast("Erro.","error");}
+    try{
+      await sb("meeting_bookings","POST",{...bkForm,notes:bkNotes,room_id:parseInt(bkForm.room_id),room_name:room?.name||"",booked_by:userName});
+      showToast("Reserva criada!");
+      setBkForm({room_id:"",specialist_name:"",booking_date:"",start_time:"09:00",end_time:"10:00"});
+      setBkNotes("");
+      const bk=await sb("meeting_bookings?order=booking_date,start_time");if(bk)setBookings(bk);
+    }catch{showToast("Erro.","error");}
   }
   async function deleteBooking(id){if(!confirm("Cancelar?"))return;try{await sb(`meeting_bookings?id=eq.${id}`,"DELETE");const bk=await sb("meeting_bookings?order=booking_date,start_time");if(bk)setBookings(bk);}catch{}}
 
   async function togglePresence(sdrName,dateStr){
-    // SDRs can only toggle their own; admins can toggle any
     if(!adminOk&&sdrName!==userName){showToast("Você só pode alterar sua própria presença.","error");return;}
     const ex=presence.find(p=>p.sdr_name===sdrName&&p.presence_date===dateStr);
     try{if(ex)await sb(`presence_calendar?id=eq.${ex.id}`,"DELETE");else await sb("presence_calendar","POST",{sdr_name:sdrName,presence_date:dateStr});const pr=await sb("presence_calendar?order=presence_date");if(pr)setPresence(pr);}
@@ -305,15 +223,15 @@ export default function App(){
     if(authStep!=="done")return;
     const id=setInterval(()=>{
       const now=new Date();
-      bookings.filter(b=>b.booking_date===today).forEach(b=>{
-        const[h,m]=b.start_time.split(":").map(Number);
-        const mtg=new Date();mtg.setHours(h,m,0,0);
+      bookings.filter(b=>b.booking_date===todayISOStr).forEach(b=>{
+        const[h,mn]=b.start_time.split(":").map(Number);
+        const mtg=new Date();mtg.setHours(h,mn,0,0);
         const diff=(mtg-now)/60000;
         if(diff>0&&diff<=60&&!notifRef.current.has(b.id)){notifRef.current.add(b.id);showToast(`🔔 Reunião em ${Math.round(diff)} min — ${b.room_name} · ${b.specialist_name}`,"info");}
       });
     },30000);
     return()=>clearInterval(id);
-  },[bookings,today,authStep]);
+  },[bookings,todayISOStr,authStep]);
 
   const f="var(--font-sans, system-ui, sans-serif)";
   const C={
@@ -323,77 +241,12 @@ export default function App(){
     btnS:{cursor:"pointer",padding:"9px 16px",borderRadius:10,border:"1.5px solid #e5e7eb",background:"#fff",fontSize:13,color:"#555"}
   };
 
-  // AUTH SCREENS
-  if(authStep==="name"||authStep==="idle"){
-    return(
-      <div style={{minHeight:"100vh",background:"linear-gradient(135deg,#7C3AED,#4F46E5)",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:f}}>
-        <div style={{background:"#fff",borderRadius:20,padding:"2.5rem",width:340,textAlign:"center"}}>
-          <div style={{fontSize:40,marginBottom:12}}>👋</div>
-          <div style={{fontWeight:700,fontSize:20,marginBottom:6}}>Bem-vindo!</div>
-          <div style={{fontSize:14,color:"#888",marginBottom:24}}>Digite seu nome para continuar</div>
-          <input style={{width:"100%",boxSizing:"border-box",padding:"12px 16px",borderRadius:10,border:"2px solid #e5e7eb",fontSize:15,marginBottom:16,outline:"none",color:"#222"}} placeholder="Seu nome" value={tmpName} onChange={e=>setTmpName(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleNameSubmit()} autoFocus/>
-          <button style={{width:"100%",padding:"12px",borderRadius:10,border:"none",background:"linear-gradient(135deg,#7C3AED,#4F46E5)",color:"#fff",fontSize:15,fontWeight:600,cursor:"pointer"}} onClick={handleNameSubmit}>Continuar</button>
-        </div>
-      </div>
-    );
-  }
+  if(authStep==="name"||authStep==="idle"){return(<div style={{minHeight:"100vh",background:"linear-gradient(135deg,#7C3AED,#4F46E5)",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:f}}><div style={{background:"#fff",borderRadius:20,padding:"2.5rem",width:340,textAlign:"center"}}><div style={{fontSize:40,marginBottom:12}}>👋</div><div style={{fontWeight:700,fontSize:20,marginBottom:6}}>Bem-vindo!</div><div style={{fontSize:14,color:"#888",marginBottom:24}}>Digite seu nome para continuar</div><input style={{width:"100%",boxSizing:"border-box",padding:"12px 16px",borderRadius:10,border:"2px solid #e5e7eb",fontSize:15,marginBottom:16,outline:"none",color:"#222"}} placeholder="Seu nome" value={tmpName} onChange={e=>setTmpName(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleNameSubmit()} autoFocus/><button style={{width:"100%",padding:"12px",borderRadius:10,border:"none",background:"linear-gradient(135deg,#7C3AED,#4F46E5)",color:"#fff",fontSize:15,fontWeight:600,cursor:"pointer"}} onClick={handleNameSubmit}>Continuar</button></div></div>);}
+  if(authStep==="pin_enter_admin"){return(<div style={{minHeight:"100vh",background:"linear-gradient(135deg,#7C3AED,#4F46E5)",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:f}}><div style={{background:"#fff",borderRadius:20,padding:"2.5rem",width:340,textAlign:"center"}}><div style={{fontSize:40,marginBottom:12}}>🔐</div><div style={{fontWeight:700,fontSize:20,marginBottom:6}}>Olá, {tmpName}!</div><div style={{fontSize:14,color:"#888",marginBottom:24}}>Digite o PIN de administrador</div><input type="password" style={{width:"100%",boxSizing:"border-box",padding:"12px 16px",borderRadius:10,border:"2px solid #e5e7eb",fontSize:15,marginBottom:16,outline:"none",color:"#222",textAlign:"center",letterSpacing:4}} placeholder="••••••••" value={tmpPin} onChange={e=>setTmpPin(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleAdminPinSubmit()} autoFocus/>{toast&&<div style={{marginBottom:12,padding:"8px",background:"#FEE2E2",color:"#EF4444",borderRadius:8,fontSize:13}}>{toast.msg}</div>}<button style={{width:"100%",padding:"12px",borderRadius:10,border:"none",background:"linear-gradient(135deg,#7C3AED,#4F46E5)",color:"#fff",fontSize:15,fontWeight:600,cursor:"pointer",marginBottom:10}} onClick={handleAdminPinSubmit}>Entrar</button><button style={{background:"none",border:"none",color:"#aaa",fontSize:13,cursor:"pointer"}} onClick={()=>{setAuthStep("name");setTmpPin("");}}>← Voltar</button></div></div>);}
+  if(authStep==="pin_create"){return(<div style={{minHeight:"100vh",background:"linear-gradient(135deg,#7C3AED,#4F46E5)",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:f}}><div style={{background:"#fff",borderRadius:20,padding:"2.5rem",width:340,textAlign:"center"}}><div style={{fontSize:40,marginBottom:12}}>🔑</div><div style={{fontWeight:700,fontSize:20,marginBottom:6}}>Olá, {tmpName}!</div><div style={{fontSize:14,color:"#888",marginBottom:24}}>Crie um PIN para proteger seu acesso</div><input type="password" style={{width:"100%",boxSizing:"border-box",padding:"12px 16px",borderRadius:10,border:"2px solid #e5e7eb",fontSize:15,marginBottom:12,outline:"none",color:"#222",textAlign:"center",letterSpacing:4}} placeholder="Criar PIN" value={tmpPin} onChange={e=>setTmpPin(e.target.value)} autoFocus/><input type="password" style={{width:"100%",boxSizing:"border-box",padding:"12px 16px",borderRadius:10,border:"2px solid #e5e7eb",fontSize:15,marginBottom:16,outline:"none",color:"#222",textAlign:"center",letterSpacing:4}} placeholder="Confirmar PIN" value={tmpPin2} onChange={e=>setTmpPin2(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handlePinCreate()}/>{toast&&<div style={{marginBottom:12,padding:"8px",background:"#FEE2E2",color:"#EF4444",borderRadius:8,fontSize:13}}>{toast.msg}</div>}<button style={{width:"100%",padding:"12px",borderRadius:10,border:"none",background:"linear-gradient(135deg,#7C3AED,#4F46E5)",color:"#fff",fontSize:15,fontWeight:600,cursor:"pointer",marginBottom:10}} onClick={handlePinCreate}>Criar PIN e entrar</button><button style={{background:"none",border:"none",color:"#aaa",fontSize:13,cursor:"pointer"}} onClick={()=>{setAuthStep("name");setTmpPin("");setTmpPin2("");}}>← Voltar</button></div></div>);}
+  if(authStep==="pin_enter"){return(<div style={{minHeight:"100vh",background:"linear-gradient(135deg,#7C3AED,#4F46E5)",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:f}}><div style={{background:"#fff",borderRadius:20,padding:"2.5rem",width:340,textAlign:"center"}}><div style={{fontSize:40,marginBottom:12}}>🔒</div><div style={{fontWeight:700,fontSize:20,marginBottom:6}}>Olá, {tmpName}!</div><div style={{fontSize:14,color:"#888",marginBottom:24}}>Digite seu PIN para entrar</div><input type="password" style={{width:"100%",boxSizing:"border-box",padding:"12px 16px",borderRadius:10,border:"2px solid #e5e7eb",fontSize:15,marginBottom:16,outline:"none",color:"#222",textAlign:"center",letterSpacing:4}} placeholder="••••" value={tmpPin} onChange={e=>setTmpPin(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handlePinEnter()} autoFocus/>{toast&&<div style={{marginBottom:12,padding:"8px",background:"#FEE2E2",color:"#EF4444",borderRadius:8,fontSize:13}}>{toast.msg}</div>}<button style={{width:"100%",padding:"12px",borderRadius:10,border:"none",background:"linear-gradient(135deg,#7C3AED,#4F46E5)",color:"#fff",fontSize:15,fontWeight:600,cursor:"pointer",marginBottom:10}} onClick={handlePinEnter}>Entrar</button><button style={{background:"none",border:"none",color:"#aaa",fontSize:13,cursor:"pointer"}} onClick={()=>{setAuthStep("name");setTmpPin("");}}>← Voltar</button></div></div>);}
 
-  if(authStep==="pin_enter_admin"){
-    return(
-      <div style={{minHeight:"100vh",background:"linear-gradient(135deg,#7C3AED,#4F46E5)",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:f}}>
-        <div style={{background:"#fff",borderRadius:20,padding:"2.5rem",width:340,textAlign:"center"}}>
-          <div style={{fontSize:40,marginBottom:12}}>🔐</div>
-          <div style={{fontWeight:700,fontSize:20,marginBottom:6}}>Olá, {tmpName}!</div>
-          <div style={{fontSize:14,color:"#888",marginBottom:24}}>Digite o PIN de administrador</div>
-          <input type="password" style={{width:"100%",boxSizing:"border-box",padding:"12px 16px",borderRadius:10,border:"2px solid #e5e7eb",fontSize:15,marginBottom:16,outline:"none",color:"#222",textAlign:"center",letterSpacing:4}} placeholder="••••••••" value={tmpPin} onChange={e=>setTmpPin(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleAdminPinSubmit()} autoFocus/>
-          {toast&&<div style={{marginBottom:12,padding:"8px",background:"#FEE2E2",color:"#EF4444",borderRadius:8,fontSize:13}}>{toast.msg}</div>}
-          <button style={{width:"100%",padding:"12px",borderRadius:10,border:"none",background:"linear-gradient(135deg,#7C3AED,#4F46E5)",color:"#fff",fontSize:15,fontWeight:600,cursor:"pointer",marginBottom:10}} onClick={handleAdminPinSubmit}>Entrar</button>
-          <button style={{background:"none",border:"none",color:"#aaa",fontSize:13,cursor:"pointer"}} onClick={()=>{setAuthStep("name");setTmpPin("");}}>← Voltar</button>
-        </div>
-      </div>
-    );
-  }
-
-  if(authStep==="pin_create"){
-    return(
-      <div style={{minHeight:"100vh",background:"linear-gradient(135deg,#7C3AED,#4F46E5)",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:f}}>
-        <div style={{background:"#fff",borderRadius:20,padding:"2.5rem",width:340,textAlign:"center"}}>
-          <div style={{fontSize:40,marginBottom:12}}>🔑</div>
-          <div style={{fontWeight:700,fontSize:20,marginBottom:6}}>Olá, {tmpName}!</div>
-          <div style={{fontSize:14,color:"#888",marginBottom:24}}>Crie um PIN para proteger seu acesso</div>
-          <input type="password" style={{width:"100%",boxSizing:"border-box",padding:"12px 16px",borderRadius:10,border:"2px solid #e5e7eb",fontSize:15,marginBottom:12,outline:"none",color:"#222",textAlign:"center",letterSpacing:4}} placeholder="Criar PIN" value={tmpPin} onChange={e=>setTmpPin(e.target.value)} autoFocus/>
-          <input type="password" style={{width:"100%",boxSizing:"border-box",padding:"12px 16px",borderRadius:10,border:"2px solid #e5e7eb",fontSize:15,marginBottom:16,outline:"none",color:"#222",textAlign:"center",letterSpacing:4}} placeholder="Confirmar PIN" value={tmpPin2} onChange={e=>setTmpPin2(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handlePinCreate()}/>
-          {toast&&<div style={{marginBottom:12,padding:"8px",background:"#FEE2E2",color:"#EF4444",borderRadius:8,fontSize:13}}>{toast.msg}</div>}
-          <button style={{width:"100%",padding:"12px",borderRadius:10,border:"none",background:"linear-gradient(135deg,#7C3AED,#4F46E5)",color:"#fff",fontSize:15,fontWeight:600,cursor:"pointer",marginBottom:10}} onClick={handlePinCreate}>Criar PIN e entrar</button>
-          <button style={{background:"none",border:"none",color:"#aaa",fontSize:13,cursor:"pointer"}} onClick={()=>{setAuthStep("name");setTmpPin("");setTmpPin2("");}}>← Voltar</button>
-        </div>
-      </div>
-    );
-  }
-
-  if(authStep==="pin_enter"){
-    return(
-      <div style={{minHeight:"100vh",background:"linear-gradient(135deg,#7C3AED,#4F46E5)",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:f}}>
-        <div style={{background:"#fff",borderRadius:20,padding:"2.5rem",width:340,textAlign:"center"}}>
-          <div style={{fontSize:40,marginBottom:12}}>🔒</div>
-          <div style={{fontWeight:700,fontSize:20,marginBottom:6}}>Olá, {tmpName}!</div>
-          <div style={{fontSize:14,color:"#888",marginBottom:24}}>Digite seu PIN para entrar</div>
-          <input type="password" style={{width:"100%",boxSizing:"border-box",padding:"12px 16px",borderRadius:10,border:"2px solid #e5e7eb",fontSize:15,marginBottom:16,outline:"none",color:"#222",textAlign:"center",letterSpacing:4}} placeholder="••••" value={tmpPin} onChange={e=>setTmpPin(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handlePinEnter()} autoFocus/>
-          {toast&&<div style={{marginBottom:12,padding:"8px",background:"#FEE2E2",color:"#EF4444",borderRadius:8,fontSize:13}}>{toast.msg}</div>}
-          <button style={{width:"100%",padding:"12px",borderRadius:10,border:"none",background:"linear-gradient(135deg,#7C3AED,#4F46E5)",color:"#fff",fontSize:15,fontWeight:600,cursor:"pointer",marginBottom:10}} onClick={handlePinEnter}>Entrar</button>
-          <button style={{background:"none",border:"none",color:"#aaa",fontSize:13,cursor:"pointer"}} onClick={()=>{setAuthStep("name");setTmpPin("");}}>← Voltar</button>
-        </div>
-      </div>
-    );
-  }
-
-  if(loading)return(
-    <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",fontFamily:f,flexDirection:"column",gap:12}}>
-      <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
-      <div style={{width:40,height:40,border:"4px solid #EDE9FE",borderTop:"4px solid #7C3AED",borderRadius:"50%",animation:"spin 1s linear infinite"}}/>
-      <div style={{color:"#7C3AED",fontSize:15,fontWeight:600}}>Carregando...</div>
-    </div>
-  );
+  if(loading)return(<div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",fontFamily:f,flexDirection:"column",gap:12}}><style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style><div style={{width:40,height:40,border:"4px solid #EDE9FE",borderTop:"4px solid #7C3AED",borderRadius:"50%",animation:"spin 1s linear infinite"}}/><div style={{color:"#7C3AED",fontSize:15,fontWeight:600}}>Carregando...</div></div>);
 
   const totalActive=specs.filter(c=>c.status==="active").length;
   const totalOff=specs.filter(c=>c.status!=="active").length;
@@ -437,8 +290,7 @@ export default function App(){
         <div style={{padding:"0.5rem 0.75rem"}}>
           {allInQ.map((c,i)=>{
             const off=c.status!=="active",isVac=c.status==="vacation",isPaused=c.status==="paused";
-            const credits=c.ind?.[qId]||0,tot=totalOf(c,qId);
-            const prev=prevTotal(c.name,qId);
+            const credits=c.ind?.[qId]||0,tot=totalOf(c,qId),prev=prevTotal(c.name,qId);
             return(
               <div key={c.id} style={{display:"flex",alignItems:"center",gap:8,padding:"7px 6px",borderBottom:i<allInQ.length-1?"1px solid #f3f4f6":"none",opacity:off?0.45:1}}>
                 <div style={{width:30,height:30,borderRadius:"50%",background:off?"#e5e7eb":q.light,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,color:off?"#999":q.color,flexShrink:0}}>{initials(c.name)}</div>
@@ -453,7 +305,7 @@ export default function App(){
                 <div style={{display:"flex",gap:4,alignItems:"center",flexShrink:0}}>
                   <span style={{padding:"2px 8px",borderRadius:20,fontSize:11,fontWeight:700,background:q.light,color:q.color}}>{tot}</span>
                   <span style={{padding:"2px 8px",borderRadius:20,fontSize:11,fontWeight:700,background:credits>0?"#FEF3C7":"#f3f4f6",color:credits>0?"#B45309":"#aaa",cursor:"pointer"}} onClick={()=>addInd(qId,c.id)}>📌{credits}</span>
-                  {adminOk&&<span style={{padding:"2px 8px",borderRadius:20,fontSize:11,fontWeight:700,background:"#D1FAE5",color:"#10B981",cursor:"pointer"}} title="Adicionar cliente extra" onClick={()=>addExtra(qId,c.id)}>+1</span>}
+                  {adminOk&&<span style={{padding:"2px 8px",borderRadius:20,fontSize:11,fontWeight:700,background:"#D1FAE5",color:"#10B981",cursor:"pointer"}} onClick={()=>addExtra(qId,c.id)}>+1</span>}
                 </div>
                 <div style={{display:"flex",gap:3,flexShrink:0}}>
                   <button style={{width:26,height:26,borderRadius:8,border:"none",background:c.selecao?"#FEF3C7":"#f3f4f6",cursor:"pointer",fontSize:12}} onClick={()=>toggleSel(c)}>⭐</button>
@@ -474,16 +326,7 @@ export default function App(){
     const cnt=(n,dk,t)=>hist.filter(h=>h.spec_name===n&&h.date_key===dk&&h.queue_id===ctrlQ&&h.type===t).length;
     const cntM=(n,t)=>hist.filter(h=>{if(h.spec_name!==n||h.queue_id!==ctrlQ||h.type!==t)return false;const p=h.date_key?.split("/");return p&&parseInt(p[1])===ctrlM.m+1&&parseInt(p[2])===ctrlM.y;}).length;
     function buildHTML(){
-      const all=QUEUES.map(q=>{
-        const wd2=getWorkdays(ctrlM.y,ctrlM.m),inQq=specs.filter(c=>c.queues.includes(q.id));
-        const c2=(n,dk,t)=>hist.filter(h=>h.spec_name===n&&h.date_key===dk&&h.queue_id===q.id&&h.type===t).length;
-        const cm2=(n,t)=>hist.filter(h=>{if(h.spec_name!==n||h.queue_id!==q.id||h.type!==t)return false;const p=h.date_key?.split("/");return p&&parseInt(p[1])===ctrlM.m+1&&parseInt(p[2])===ctrlM.y;}).length;
-        const dH=wd2.map(d=>`<th colspan="2">${d.toLocaleDateString("pt-BR",{day:"2-digit",month:"2-digit"})}</th>`).join("");
-        const sH=wd2.map(()=>`<th class="n">N</th><th class="i">I</th>`).join("");
-        const rows=inQq.map(c=>{const tN=cm2(c.name,"normal"),tI=cm2(c.name,"indicacao")+cm2(c.name,"selecao");const cells=wd2.map(d=>{const dk=d.toLocaleDateString("pt-BR"),n=c2(c.name,dk,"normal"),ii=c2(c.name,dk,"indicacao")+c2(c.name,dk,"selecao");return`<td class="${n>0?"nv":"e"}">${n||"—"}</td><td class="${ii>0?"iv":"e"}">${ii||"—"}</td>`;}).join("");return`<tr><td class="name">${c.name}</td>${cells}<td class="tn">${tN||"—"}</td><td class="ti">${tI||"—"}</td></tr>`;}).join("");
-        const tot=`<tr class="tot"><td class="name">TOTAL</td>${wd2.map(d=>{const dk=d.toLocaleDateString("pt-BR"),n=inQq.reduce((a,c)=>a+c2(c.name,dk,"normal"),0),ii=inQq.reduce((a,c)=>a+c2(c.name,dk,"indicacao")+c2(c.name,dk,"selecao"),0);return`<td class="${n>0?"nv":"e"}">${n||"—"}</td><td class="${ii>0?"iv":"e"}">${ii||"—"}</td>`;}).join("")}<td class="tn">${inQq.reduce((a,c)=>a+cm2(c.name,"normal"),0)||"—"}</td><td class="ti">${inQq.reduce((a,c)=>a+cm2(c.name,"indicacao")+cm2(c.name,"selecao"),0)||"—"}</td></tr>`;
-        return`<h3>${q.icon} ${q.label}</h3><table><thead><tr><th rowspan="2" class="name">Especialista</th>${dH}<th colspan="2" class="tot-h">Total</th></tr><tr>${sH}<th class="n">N</th><th class="i">I</th></tr></thead><tbody>${rows}${tot}</tbody></table>`;
-      }).join("");
+      const all=QUEUES.map(q=>{const wd2=getWorkdays(ctrlM.y,ctrlM.m),inQq=specs.filter(c=>c.queues.includes(q.id));const c2=(n,dk,t)=>hist.filter(h=>h.spec_name===n&&h.date_key===dk&&h.queue_id===q.id&&h.type===t).length;const cm2=(n,t)=>hist.filter(h=>{if(h.spec_name!==n||h.queue_id!==q.id||h.type!==t)return false;const p=h.date_key?.split("/");return p&&parseInt(p[1])===ctrlM.m+1&&parseInt(p[2])===ctrlM.y;}).length;const dH=wd2.map(d=>`<th colspan="2">${d.toLocaleDateString("pt-BR",{day:"2-digit",month:"2-digit"})}</th>`).join("");const sH=wd2.map(()=>`<th class="n">N</th><th class="i">I</th>`).join("");const rows=inQq.map(c=>{const tN=cm2(c.name,"normal"),tI=cm2(c.name,"indicacao")+cm2(c.name,"selecao");const cells=wd2.map(d=>{const dk=d.toLocaleDateString("pt-BR"),n=c2(c.name,dk,"normal"),ii=c2(c.name,dk,"indicacao")+c2(c.name,dk,"selecao");return`<td class="${n>0?"nv":"e"}">${n||"—"}</td><td class="${ii>0?"iv":"e"}">${ii||"—"}</td>`;}).join("");return`<tr><td class="name">${c.name}</td>${cells}<td class="tn">${tN||"—"}</td><td class="ti">${tI||"—"}</td></tr>`;}).join("");const tot=`<tr class="tot"><td class="name">TOTAL</td>${wd2.map(d=>{const dk=d.toLocaleDateString("pt-BR"),n=inQq.reduce((a,c)=>a+c2(c.name,dk,"normal"),0),ii=inQq.reduce((a,c)=>a+c2(c.name,dk,"indicacao")+c2(c.name,dk,"selecao"),0);return`<td class="${n>0?"nv":"e"}">${n||"—"}</td><td class="${ii>0?"iv":"e"}">${ii||"—"}</td>`;}).join("")}<td class="tn">${inQq.reduce((a,c)=>a+cm2(c.name,"normal"),0)||"—"}</td><td class="ti">${inQq.reduce((a,c)=>a+cm2(c.name,"indicacao")+cm2(c.name,"selecao"),0)||"—"}</td></tr>`;return`<h3>${q.icon} ${q.label}</h3><table><thead><tr><th rowspan="2" class="name">Especialista</th>${dH}<th colspan="2" class="tot-h">Total</th></tr><tr>${sH}<th class="n">N</th><th class="i">I</th></tr></thead><tbody>${rows}${tot}</tbody></table>`;}).join("");
       return`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Rodízio — ${MONTHS[ctrlM.m]} ${ctrlM.y}</title><style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:Arial,sans-serif;font-size:11px;padding:20px}h1{font-size:16px;color:#7C3AED;margin-bottom:4px}p{color:#888;margin-bottom:4px}h3{font-size:13px;color:#7C3AED;margin:20px 0 6px}table{border-collapse:collapse;width:100%}th,td{border:0.5px solid #e0ddf8;padding:4px 6px;text-align:center;white-space:nowrap}th{background:#f5f3ff;color:#534AB7}.tot-h{background:#d8d4fc;color:#3C3489}.name{text-align:left;min-width:110px;font-weight:500}.n{color:#7C3AED;font-size:10px}.i{color:#F59E0B;font-size:10px}.nv{background:#EDE9FE;color:#534AB7;font-weight:500}.iv{background:#FEF3C7;color:#B45309;font-weight:500}.e{color:#ccc}.tn{background:#EDE9FE;color:#534AB7;font-weight:700}.ti{background:#FEF3C7;color:#B45309;font-weight:700}.tot td{background:#f5f3ff;font-weight:700;border-top:2px solid #C4B5F4}</style></head><body><h1>Rodízio de Especialistas</h1><p>${MONTHS[ctrlM.m]} ${ctrlM.y}</p>${all}</body></html>`;
     }
     const th={padding:"4px 6px",fontSize:11,fontWeight:600,textAlign:"center",border:"0.5px solid #e5e7eb",background:"#f9fafb",whiteSpace:"nowrap",color:"#555"};
@@ -517,25 +360,8 @@ export default function App(){
               </tr>
             </thead>
             <tbody>
-              {inQ.map((c,ri)=>{
-                const rb=ri%2===0?"#fff":"#fafafa",tN=cntM(c.name,"normal"),tI=cntM(c.name,"indicacao")+cntM(c.name,"selecao");
-                return(
-                  <tr key={c.id}>
-                    <td style={{...td,textAlign:"left",fontWeight:600,background:rb,position:"sticky",left:0,zIndex:1}}>
-                      <div style={{display:"flex",alignItems:"center",gap:6}}><div style={{width:20,height:20,borderRadius:"50%",background:qInfo.light,display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,fontWeight:700,color:qInfo.color}}>{initials(c.name)}</div>{c.name}</div>
-                    </td>
-                    {wd.map(d=>{const dk=d.toLocaleDateString("pt-BR"),n=cnt(c.name,dk,"normal"),ii=cnt(c.name,dk,"indicacao")+cnt(c.name,dk,"selecao");return[<td key={dk+"n"} style={{...td,background:n>0?"#EDE9FE":rb,color:n>0?"#7C3AED":"#ddd",fontWeight:n>0?600:400}}>{n||""}</td>,<td key={dk+"i"} style={{...td,background:ii>0?"#FEF3C7":rb,color:ii>0?"#B45309":"#ddd",fontWeight:ii>0?600:400}}>{ii||""}</td>];})}
-                    <td style={{...td,fontWeight:700,background:qInfo.light,color:qInfo.color}}>{tN||""}</td>
-                    <td style={{...td,fontWeight:700,background:"#FEF3C7",color:"#B45309"}}>{tI||""}</td>
-                  </tr>
-                );
-              })}
-              <tr style={{borderTop:`2px solid ${qInfo.color}40`}}>
-                <td style={{...td,textAlign:"left",fontWeight:700,background:"#f9fafb"}}>TOTAL</td>
-                {wd.map(d=>{const dk=d.toLocaleDateString("pt-BR"),n=inQ.reduce((a,c)=>a+cnt(c.name,dk,"normal"),0),ii=inQ.reduce((a,c)=>a+cnt(c.name,dk,"indicacao")+cnt(c.name,dk,"selecao"),0);return[<td key={dk+"tn"} style={{...td,fontWeight:600,background:n>0?qInfo.light:"#f9fafb",color:qInfo.color}}>{n||""}</td>,<td key={dk+"ti"} style={{...td,fontWeight:600,background:ii>0?"#FEF3C7":"#f9fafb",color:"#B45309"}}>{ii||""}</td>];})}
-                <td style={{...td,fontWeight:700,background:qInfo.light,color:qInfo.color}}>{inQ.reduce((a,c)=>a+cntM(c.name,"normal"),0)||""}</td>
-                <td style={{...td,fontWeight:700,background:"#FEF3C7",color:"#B45309"}}>{inQ.reduce((a,c)=>a+cntM(c.name,"indicacao")+cntM(c.name,"selecao"),0)||""}</td>
-              </tr>
+              {inQ.map((c,ri)=>{const rb=ri%2===0?"#fff":"#fafafa",tN=cntM(c.name,"normal"),tI=cntM(c.name,"indicacao")+cntM(c.name,"selecao");return(<tr key={c.id}><td style={{...td,textAlign:"left",fontWeight:600,background:rb,position:"sticky",left:0,zIndex:1}}><div style={{display:"flex",alignItems:"center",gap:6}}><div style={{width:20,height:20,borderRadius:"50%",background:qInfo.light,display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,fontWeight:700,color:qInfo.color}}>{initials(c.name)}</div>{c.name}</div></td>{wd.map(d=>{const dk=d.toLocaleDateString("pt-BR"),n=cnt(c.name,dk,"normal"),ii=cnt(c.name,dk,"indicacao")+cnt(c.name,dk,"selecao");return[<td key={dk+"n"} style={{...td,background:n>0?"#EDE9FE":rb,color:n>0?"#7C3AED":"#ddd",fontWeight:n>0?600:400}}>{n||""}</td>,<td key={dk+"i"} style={{...td,background:ii>0?"#FEF3C7":rb,color:ii>0?"#B45309":"#ddd",fontWeight:ii>0?600:400}}>{ii||""}</td>];})}<td style={{...td,fontWeight:700,background:qInfo.light,color:qInfo.color}}>{tN||""}</td><td style={{...td,fontWeight:700,background:"#FEF3C7",color:"#B45309"}}>{tI||""}</td></tr>);})}
+              <tr style={{borderTop:`2px solid ${qInfo.color}40`}}><td style={{...td,textAlign:"left",fontWeight:700,background:"#f9fafb"}}>TOTAL</td>{wd.map(d=>{const dk=d.toLocaleDateString("pt-BR"),n=inQ.reduce((a,c)=>a+cnt(c.name,dk,"normal"),0),ii=inQ.reduce((a,c)=>a+cnt(c.name,dk,"indicacao")+cnt(c.name,dk,"selecao"),0);return[<td key={dk+"tn"} style={{...td,fontWeight:600,background:n>0?qInfo.light:"#f9fafb",color:qInfo.color}}>{n||""}</td>,<td key={dk+"ti"} style={{...td,fontWeight:600,background:ii>0?"#FEF3C7":"#f9fafb",color:"#B45309"}}>{ii||""}</td>];})}<td style={{...td,fontWeight:700,background:qInfo.light,color:qInfo.color}}>{inQ.reduce((a,c)=>a+cntM(c.name,"normal"),0)||""}</td><td style={{...td,fontWeight:700,background:"#FEF3C7",color:"#B45309"}}>{inQ.reduce((a,c)=>a+cntM(c.name,"indicacao")+cntM(c.name,"selecao"),0)||""}</td></tr>
             </tbody>
           </table>
         </div>
@@ -552,58 +378,57 @@ export default function App(){
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
             <div><div style={{fontSize:12,fontWeight:600,color:"#555",marginBottom:4}}>Sala</div>
               <select style={C.inp} value={bkForm.room_id} onChange={e=>setBkForm(p=>({...p,room_id:e.target.value}))}>
-                <option value="">Selecione...</option>
-                {rooms.map(r=><option key={r.id} value={r.id}>{r.name}</option>)}
+                <option value="">Selecione...</option>{rooms.map(r=><option key={r.id} value={r.id}>{r.name}</option>)}
               </select>
             </div>
             <div><div style={{fontSize:12,fontWeight:600,color:"#555",marginBottom:4}}>Especialista</div>
               <select style={C.inp} value={bkForm.specialist_name} onChange={e=>setBkForm(p=>({...p,specialist_name:e.target.value}))}>
-                <option value="">Selecione...</option>
-                {specs.map(s=><option key={s.id} value={s.name}>{s.name}</option>)}
+                <option value="">Selecione...</option>{specs.map(s=><option key={s.id} value={s.name}>{s.name}</option>)}
               </select>
             </div>
-            <div><div style={{fontSize:12,fontWeight:600,color:"#555",marginBottom:4}}>Data</div><input type="date" style={C.inp} value={bkForm.booking_date} onChange={e=>setBkForm(p=>({...p,booking_date:e.target.value}))}/></div>
+            <div>
+              <div style={{fontSize:12,fontWeight:600,color:"#555",marginBottom:4}}>Data</div>
+              <input type="date" style={C.inp} value={bkForm.booking_date} onChange={e=>setBkForm(p=>({...p,booking_date:e.target.value}))}/>
+              {bkForm.booking_date&&<div style={{fontSize:11,color:"#888",marginTop:3}}>📅 {toBR(bkForm.booking_date)}</div>}
+            </div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
               <div><div style={{fontSize:12,fontWeight:600,color:"#555",marginBottom:4}}>Início</div><input type="time" style={C.inp} value={bkForm.start_time} onChange={e=>setBkForm(p=>({...p,start_time:e.target.value}))}/></div>
               <div><div style={{fontSize:12,fontWeight:600,color:"#555",marginBottom:4}}>Fim</div><input type="time" style={C.inp} value={bkForm.end_time} onChange={e=>setBkForm(p=>({...p,end_time:e.target.value}))}/></div>
             </div>
           </div>
-          <div style={{marginBottom:12}}><div style={{fontSize:12,fontWeight:600,color:"#555",marginBottom:4}}>Observação</div><input style={C.inp} placeholder="Ex: Reunião de feedback" value={bkForm.notes} onChange={e=>setBkForm(p=>({...p,notes:e.target.value}))}/></div>
+          <div style={{marginBottom:12}}>
+            <div style={{fontSize:12,fontWeight:600,color:"#555",marginBottom:4}}>Observação</div>
+            <input style={C.inp} placeholder="Ex: Reunião de feedback" value={bkNotes} onChange={e=>setBkNotes(e.target.value)}/>
+          </div>
           <button style={C.btnP} onClick={saveBooking}>Reservar sala</button>
         </div>
-        <div style={{fontWeight:700,fontSize:14,margin:"4px 0 10px"}}>📅 Salas hoje — {today}</div>
+        <div style={{fontWeight:700,fontSize:14,margin:"4px 0 10px"}}>📅 Salas hoje — {toBR(todayISOStr)}</div>
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(260px,1fr))",gap:10,marginBottom:16}}>
           {rooms.map((room,ri)=>{
-            const rb=bookings.filter(b=>b.room_id===room.id&&b.booking_date===today).sort((a,b)=>a.start_time.localeCompare(b.start_time));
+            const rb=bookings.filter(b=>b.room_id===room.id&&b.booking_date===todayISOStr).sort((a,b)=>a.start_time.localeCompare(b.start_time));
             const col=RCOLS[ri%RCOLS.length];
-            return(
-              <div key={room.id} style={{...C.card,borderTop:`4px solid ${col}`,marginBottom:0}}>
-                <div style={{fontWeight:700,fontSize:14,color:col,marginBottom:10}}>{room.name}</div>
-                {!rb.length&&<div style={{fontSize:12,color:"#aaa",textAlign:"center",padding:"0.5rem"}}>Livre hoje</div>}
-                {rb.map(b=>(
-                  <div key={b.id} style={{background:`${col}15`,borderRadius:10,padding:"8px 10px",marginBottom:6}}>
-                    <div style={{display:"flex",justifyContent:"space-between"}}>
-                      <div><div style={{fontWeight:600,fontSize:13}}>{b.specialist_name}</div><div style={{fontSize:12,color:col,fontWeight:600}}>{b.start_time}–{b.end_time}</div>{b.notes&&<div style={{fontSize:11,color:"#888"}}>{b.notes}</div>}</div>
-                      {(b.booked_by===userName||adminOk)&&<button style={{background:"#FEE2E2",border:"none",borderRadius:8,padding:"4px 8px",cursor:"pointer",fontSize:12,color:"#EF4444"}} onClick={()=>deleteBooking(b.id)}>✕</button>}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            );
+            return(<div key={room.id} style={{...C.card,borderTop:`4px solid ${col}`,marginBottom:0}}>
+              <div style={{fontWeight:700,fontSize:14,color:col,marginBottom:10}}>{room.name}</div>
+              {!rb.length&&<div style={{fontSize:12,color:"#aaa",textAlign:"center",padding:"0.5rem"}}>Livre hoje</div>}
+              {rb.map(b=>(<div key={b.id} style={{background:`${col}15`,borderRadius:10,padding:"8px 10px",marginBottom:6}}>
+                <div style={{display:"flex",justifyContent:"space-between"}}>
+                  <div><div style={{fontWeight:600,fontSize:13}}>{b.specialist_name}</div><div style={{fontSize:12,color:col,fontWeight:600}}>{b.start_time}–{b.end_time}</div>{b.notes&&<div style={{fontSize:11,color:"#888"}}>{b.notes}</div>}</div>
+                  {(b.booked_by===userName||adminOk)&&<button style={{background:"#FEE2E2",border:"none",borderRadius:8,padding:"4px 8px",cursor:"pointer",fontSize:12,color:"#EF4444"}} onClick={()=>deleteBooking(b.id)}>✕</button>}
+                </div>
+              </div>))}
+            </div>);
           })}
         </div>
         <div style={{fontWeight:700,fontSize:14,marginBottom:10}}>📋 Próximas reservas</div>
         <div style={C.card}>
-          {!bookings.filter(b=>b.booking_date>=today).length&&<div style={{fontSize:13,color:"#888",textAlign:"center",padding:"1rem"}}>Nenhuma reserva.</div>}
-          {bookings.filter(b=>b.booking_date>=today).map((b,i,arr)=>{
+          {!bookings.filter(b=>b.booking_date>=todayISOStr).length&&<div style={{fontSize:13,color:"#888",textAlign:"center",padding:"1rem"}}>Nenhuma reserva.</div>}
+          {bookings.filter(b=>b.booking_date>=todayISOStr).map((b,i,arr)=>{
             const ri=rooms.findIndex(r=>r.id===b.room_id),col=RCOLS[ri>=0?ri%RCOLS.length:0];
-            return(
-              <div key={b.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderBottom:i<arr.length-1?"1px solid #f3f4f6":"none"}}>
-                <div style={{width:8,height:8,borderRadius:"50%",background:col,flexShrink:0}}/>
-                <div style={{flex:1}}><span style={{fontWeight:600,fontSize:13}}>{b.specialist_name}</span><span style={{fontSize:12,color:"#888",marginLeft:8}}>{b.room_name} · {b.booking_date} · {b.start_time}–{b.end_time}</span></div>
-                {(b.booked_by===userName||adminOk)&&<button style={{background:"#FEE2E2",border:"none",borderRadius:8,padding:"4px 8px",cursor:"pointer",fontSize:12,color:"#EF4444"}} onClick={()=>deleteBooking(b.id)}>✕</button>}
-              </div>
-            );
+            return(<div key={b.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderBottom:i<arr.length-1?"1px solid #f3f4f6":"none"}}>
+              <div style={{width:8,height:8,borderRadius:"50%",background:col,flexShrink:0}}/>
+              <div style={{flex:1}}><span style={{fontWeight:600,fontSize:13}}>{b.specialist_name}</span><span style={{fontSize:12,color:"#888",marginLeft:8}}>{b.room_name} · {toBR(b.booking_date)} · {b.start_time}–{b.end_time}</span></div>
+              {(b.booked_by===userName||adminOk)&&<button style={{background:"#FEE2E2",border:"none",borderRadius:8,padding:"4px 8px",cursor:"pointer",fontSize:12,color:"#EF4444"}} onClick={()=>deleteBooking(b.id)}>✕</button>}
+            </div>);
           })}
         </div>
       </div>
@@ -620,18 +445,9 @@ export default function App(){
         <div style={{...C.card,background:"linear-gradient(135deg,#EDE9FE,#E0E7FF)",border:"none"}}>
           <div style={{fontWeight:700,fontSize:14,marginBottom:10,color:"#4F46E5"}}>📍 Presença hoje — {today}</div>
           {!presentToday.length&&<div style={{fontSize:13,color:"#888"}}>Nenhum SDR presencial hoje.</div>}
-          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-            {presentToday.map(sdr=>(
-              <div key={sdr} style={{display:"flex",alignItems:"center",gap:6,background:"#fff",borderRadius:10,padding:"6px 12px",border:"2px solid #7C3AED"}}>
-                <div style={{width:28,height:28,borderRadius:"50%",background:"#EDE9FE",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,color:"#7C3AED"}}>{initials(sdr)}</div>
-                <span style={{fontWeight:600,fontSize:13,color:"#7C3AED"}}>{sdr}</span>
-              </div>
-            ))}
-          </div>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>{presentToday.map(sdr=>(<div key={sdr} style={{display:"flex",alignItems:"center",gap:6,background:"#fff",borderRadius:10,padding:"6px 12px",border:"2px solid #7C3AED"}}><div style={{width:28,height:28,borderRadius:"50%",background:"#EDE9FE",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,color:"#7C3AED"}}>{initials(sdr)}</div><span style={{fontWeight:600,fontSize:13,color:"#7C3AED"}}>{sdr}</span></div>))}</div>
         </div>
-        <div style={{fontSize:12,color:"#888",marginBottom:10,padding:"6px 10px",background:"#FEF3C7",borderRadius:8}}>
-          {adminOk?"👑 Admin: você pode marcar presença de qualquer SDR.":"💡 Você só pode marcar sua própria presença."}
-        </div>
+        <div style={{fontSize:12,color:"#888",marginBottom:10,padding:"6px 10px",background:"#FEF3C7",borderRadius:8}}>{adminOk?"👑 Admin: você pode marcar presença de qualquer SDR.":"💡 Você só pode marcar sua própria presença."}</div>
         <div style={{display:"flex",gap:6,alignItems:"center",marginBottom:14,background:"#fff",borderRadius:10,border:"1px solid #e5e7eb",padding:"6px 10px",width:"fit-content"}}>
           <button style={{...C.btnS,padding:"5px 10px"}} onClick={()=>setPresM(p=>{const d=new Date(p.y,p.m-1,1);return{y:d.getFullYear(),m:d.getMonth()}})}>‹</button>
           <span style={{fontWeight:600,fontSize:13,minWidth:120,textAlign:"center"}}>{MONTHS[presM.m]} {presM.y}</span>
@@ -642,40 +458,18 @@ export default function App(){
             <thead>
               <tr>
                 <th style={{padding:"8px 12px",fontSize:12,fontWeight:700,textAlign:"left",background:"#f9fafb",border:"0.5px solid #e5e7eb",minWidth:120}}>SDR</th>
-                {wd.map(d=>(
-                  <th key={d.toISOString()} style={{padding:"6px 4px",fontSize:11,fontWeight:600,textAlign:"center",background:fdk(d)===today?"#EDE9FE":"#f9fafb",color:fdk(d)===today?"#7C3AED":"#555",border:"0.5px solid #e5e7eb",minWidth:40}}>
-                    <div>{d.toLocaleDateString("pt-BR",{day:"2-digit"})}</div>
-                    <div style={{fontSize:9,color:"#aaa"}}>{WEEKDAYS[d.getDay()]}</div>
-                  </th>
-                ))}
+                {wd.map(d=>(<th key={d.toISOString()} style={{padding:"6px 4px",fontSize:11,fontWeight:600,textAlign:"center",background:fdk(d)===today?"#EDE9FE":"#f9fafb",color:fdk(d)===today?"#7C3AED":"#555",border:"0.5px solid #e5e7eb",minWidth:40}}><div>{d.toLocaleDateString("pt-BR",{day:"2-digit"})}</div><div style={{fontSize:9,color:"#aaa"}}>{WEEKDAYS[d.getDay()]}</div></th>))}
                 <th style={{padding:"6px 8px",fontSize:11,fontWeight:700,background:"#EDE9FE",color:"#7C3AED",border:"0.5px solid #e5e7eb",minWidth:40}}>Total</th>
               </tr>
             </thead>
             <tbody>
               {sdrList.map((sdr,si)=>{
-                const rb=si%2===0?"#fff":"#fafafa",monthTotal=wd.filter(d=>isPresent(sdr,fdk(d))).length;
-                const canEdit=adminOk||sdr===userName;
-                return(
-                  <tr key={sdr}>
-                    <td style={{padding:"8px 12px",fontWeight:600,fontSize:13,background:rb,border:"0.5px solid #f3f4f6"}}>
-                      <div style={{display:"flex",alignItems:"center",gap:6}}>
-                        <div style={{width:24,height:24,borderRadius:"50%",background:"#EDE9FE",display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,fontWeight:700,color:"#7C3AED"}}>{initials(sdr)}</div>
-                        {sdr}{sdr===userName&&<span style={{fontSize:10,color:"#7C3AED",background:"#EDE9FE",borderRadius:6,padding:"1px 5px"}}>você</span>}
-                      </div>
-                    </td>
-                    {wd.map(d=>{
-                      const dk=fdk(d),present=isPresent(sdr,dk),isToday=dk===today;
-                      return(
-                        <td key={d.toISOString()} style={{padding:"4px",textAlign:"center",background:present?"#EDE9FE":isToday?"#fafaf5":rb,border:`0.5px solid ${isToday?"#C4B5F4":"#f3f4f6"}`}}>
-                          <button style={{width:28,height:28,borderRadius:8,border:`2px solid ${present?"#7C3AED":canEdit?"#e5e7eb":"#f3f4f6"}`,background:present?"#7C3AED":"transparent",cursor:canEdit?"pointer":"default",display:"flex",alignItems:"center",justifyContent:"center",margin:"auto",opacity:canEdit?1:0.4}} onClick={()=>canEdit&&togglePresence(sdr,dk)}>
-                            {present&&<span style={{color:"#fff",fontSize:12,fontWeight:700}}>✓</span>}
-                          </button>
-                        </td>
-                      );
-                    })}
-                    <td style={{padding:"6px 8px",textAlign:"center",fontWeight:700,fontSize:13,background:"#EDE9FE",color:"#7C3AED",border:"0.5px solid #e5e7eb"}}>{monthTotal}</td>
-                  </tr>
-                );
+                const rb=si%2===0?"#fff":"#fafafa",monthTotal=wd.filter(d=>isPresent(sdr,fdk(d))).length,canEdit=adminOk||sdr===userName;
+                return(<tr key={sdr}>
+                  <td style={{padding:"8px 12px",fontWeight:600,fontSize:13,background:rb,border:"0.5px solid #f3f4f6"}}><div style={{display:"flex",alignItems:"center",gap:6}}><div style={{width:24,height:24,borderRadius:"50%",background:"#EDE9FE",display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,fontWeight:700,color:"#7C3AED"}}>{initials(sdr)}</div>{sdr}{sdr===userName&&<span style={{fontSize:10,color:"#7C3AED",background:"#EDE9FE",borderRadius:6,padding:"1px 5px"}}>você</span>}</div></td>
+                  {wd.map(d=>{const dk=fdk(d),present=isPresent(sdr,dk),isToday=dk===today;return(<td key={d.toISOString()} style={{padding:"4px",textAlign:"center",background:present?"#EDE9FE":isToday?"#fafaf5":rb,border:`0.5px solid ${isToday?"#C4B5F4":"#f3f4f6"}`}}><button style={{width:28,height:28,borderRadius:8,border:`2px solid ${present?"#7C3AED":canEdit?"#e5e7eb":"#f3f4f6"}`,background:present?"#7C3AED":"transparent",cursor:canEdit?"pointer":"default",display:"flex",alignItems:"center",justifyContent:"center",margin:"auto",opacity:canEdit?1:0.4}} onClick={()=>canEdit&&togglePresence(sdr,dk)}>{present&&<span style={{color:"#fff",fontSize:12,fontWeight:700}}>✓</span>}</button></td>);})}
+                  <td style={{padding:"6px 8px",textAlign:"center",fontWeight:700,fontSize:13,background:"#EDE9FE",color:"#7C3AED",border:"0.5px solid #e5e7eb"}}>{monthTotal}</td>
+                </tr>);
               })}
             </tbody>
           </table>
@@ -689,10 +483,7 @@ export default function App(){
     <div style={{fontFamily:f,background:"#f8f7ff",minHeight:"100vh",padding:"0.75rem"}}>
       <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
       <div style={{background:"linear-gradient(135deg,#7C3AED,#4F46E5)",borderRadius:16,padding:"1rem 1.25rem",marginBottom:14,display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
-        <div>
-          <div style={{fontSize:18,fontWeight:700,color:"#fff"}}>🔄 Rodízio de Especialistas</div>
-          <div style={{fontSize:12,color:"#ffffff99",marginTop:2}}>{totalActive} ativos · {totalOff} fora</div>
-        </div>
+        <div><div style={{fontSize:18,fontWeight:700,color:"#fff"}}>🔄 Rodízio de Especialistas</div><div style={{fontSize:12,color:"#ffffff99",marginTop:2}}>{totalActive} ativos · {totalOff} fora</div></div>
         <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
           <button style={{padding:"8px 16px",borderRadius:10,border:"none",background:"#10B981",color:"#fff",fontSize:13,fontWeight:600,cursor:"pointer"}} onClick={iniciarNovoDia}>☀️ Novo dia</button>
           <div style={{display:"flex",alignItems:"center",gap:6,background:"#ffffff20",borderRadius:10,padding:"6px 12px"}}>
@@ -706,41 +497,21 @@ export default function App(){
         {TABS.map(t=><button key={t.id} style={{flex:1,minWidth:55,padding:"7px 2px",borderRadius:10,border:"none",cursor:"pointer",fontSize:11,fontWeight:tab===t.id?700:400,background:tab===t.id?"linear-gradient(135deg,#7C3AED,#4F46E5)":"transparent",color:tab===t.id?"#fff":"#888"}} onClick={()=>setTab(t.id)}>{t.icon} {t.id}</button>)}
       </div>
       {toast&&<div style={{marginBottom:12,padding:"10px 16px",background:toast.type==="error"?"#FEE2E2":toast.type==="info"?"#EDE9FE":"#D1FAE5",color:toast.type==="error"?"#EF4444":toast.type==="info"?"#7C3AED":"#10B981",borderRadius:10,fontSize:13,fontWeight:500}}>{toast.msg}</div>}
-
       {adminOpen&&(
         <div style={{background:"#fff",borderRadius:16,padding:"1.5rem",border:"1px solid #e5e7eb",marginBottom:16,boxShadow:"0 4px 24px #7C3AED20"}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
-            <span style={{fontWeight:700,fontSize:15}}>⚙️ Painel Admin</span>
-            <button style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"#aaa"}} onClick={()=>setAdminOpen(false)}>×</button>
-          </div>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}><span style={{fontWeight:700,fontSize:15}}>⚙️ Painel Admin</span><button style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"#aaa"}} onClick={()=>setAdminOpen(false)}>×</button></div>
           <div style={{fontWeight:700,fontSize:13,marginBottom:8}}>SDRs</div>
-          <div style={{maxHeight:150,overflowY:"auto",marginBottom:12}}>
-            {sdrs.map(s=>(<div key={s.id} style={{padding:"6px 0",borderBottom:"1px solid #f3f4f6"}}>
-              {editSdr?.id===s.id?(<div style={{display:"flex",gap:8}}><input style={{...C.inp,flex:1,padding:"6px 10px"}} value={editSdr.name} onChange={e=>setEditSdr(p=>({...p,name:e.target.value}))} autoFocus/><button style={{...C.btnP,padding:"6px 12px",fontSize:12}} onClick={async()=>{await sb(`sdrs?id=eq.${s.id}`,"PATCH",{name:editSdr.name});const sd=await sb("sdrs?order=name");if(sd)setSdrs(sd);setEditSdr(null);showToast("Atualizado!");}}>✓</button><button style={{...C.btnS,padding:"6px 10px",fontSize:12}} onClick={()=>setEditSdr(null)}>✕</button></div>)
-              :(<div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><span style={{fontWeight:600,fontSize:13}}>{s.name}</span><div style={{display:"flex",gap:6}}><button style={{padding:"4px 8px",borderRadius:8,border:"1px solid #e5e7eb",background:"#f9fafb",fontSize:12,cursor:"pointer"}} onClick={()=>setEditSdr({id:s.id,name:s.name})}>✏️</button><button style={{padding:"4px 8px",borderRadius:8,border:"1px solid #FECACA",background:"#FEE2E2",color:"#EF4444",fontSize:12,cursor:"pointer"}} onClick={async()=>{if(!confirm(`Remover ${s.name}?`))return;await sb(`sdrs?id=eq.${s.id}`,"DELETE");const sd=await sb("sdrs?order=name");if(sd)setSdrs(sd);}}>🗑️</button></div></div>)}
-            </div>))}
-          </div>
+          <div style={{maxHeight:150,overflowY:"auto",marginBottom:12}}>{sdrs.map(s=>(<div key={s.id} style={{padding:"6px 0",borderBottom:"1px solid #f3f4f6"}}>{editSdr?.id===s.id?(<div style={{display:"flex",gap:8}}><input style={{...C.inp,flex:1,padding:"6px 10px"}} value={editSdr.name} onChange={e=>setEditSdr(p=>({...p,name:e.target.value}))} autoFocus/><button style={{...C.btnP,padding:"6px 12px",fontSize:12}} onClick={async()=>{await sb(`sdrs?id=eq.${s.id}`,"PATCH",{name:editSdr.name});const sd=await sb("sdrs?order=name");if(sd)setSdrs(sd);setEditSdr(null);showToast("Atualizado!");}}>✓</button><button style={{...C.btnS,padding:"6px 10px",fontSize:12}} onClick={()=>setEditSdr(null)}>✕</button></div>):(<div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><span style={{fontWeight:600,fontSize:13}}>{s.name}</span><div style={{display:"flex",gap:6}}><button style={{padding:"4px 8px",borderRadius:8,border:"1px solid #e5e7eb",background:"#f9fafb",fontSize:12,cursor:"pointer"}} onClick={()=>setEditSdr({id:s.id,name:s.name})}>✏️</button><button style={{padding:"4px 8px",borderRadius:8,border:"1px solid #FECACA",background:"#FEE2E2",color:"#EF4444",fontSize:12,cursor:"pointer"}} onClick={async()=>{if(!confirm(`Remover ${s.name}?`))return;await sb(`sdrs?id=eq.${s.id}`,"DELETE");const sd=await sb("sdrs?order=name");if(sd)setSdrs(sd);}}>🗑️</button></div></div>)}</div>))}</div>
           <div style={{fontWeight:700,fontSize:13,marginBottom:8}}>Salas</div>
-          <div style={{maxHeight:150,overflowY:"auto",marginBottom:12}}>
-            {rooms.map((r,ri)=>(<div key={r.id} style={{padding:"6px 0",borderBottom:"1px solid #f3f4f6"}}>
-              {editRoom?.id===r.id?(<div style={{display:"flex",gap:8}}><input style={{...C.inp,flex:1,padding:"6px 10px"}} value={editRoom.name} onChange={e=>setEditRoom(p=>({...p,name:e.target.value}))} autoFocus/><button style={{...C.btnP,padding:"6px 12px",fontSize:12}} onClick={async()=>{await sb(`meeting_rooms?id=eq.${r.id}`,"PATCH",{name:editRoom.name});const rm=await sb("meeting_rooms?order=name");if(rm)setRooms(rm);setEditRoom(null);showToast("Atualizado!");}}>✓</button><button style={{...C.btnS,padding:"6px 10px",fontSize:12}} onClick={()=>setEditRoom(null)}>✕</button></div>)
-              :(<div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><div style={{display:"flex",alignItems:"center",gap:8}}><div style={{width:10,height:10,borderRadius:"50%",background:RCOLS[ri%RCOLS.length]}}/><span style={{fontWeight:600,fontSize:13}}>{r.name}</span></div><div style={{display:"flex",gap:6}}><button style={{padding:"4px 8px",borderRadius:8,border:"1px solid #e5e7eb",background:"#f9fafb",fontSize:12,cursor:"pointer"}} onClick={()=>setEditRoom({id:r.id,name:r.name})}>✏️</button><button style={{padding:"4px 8px",borderRadius:8,border:"1px solid #FECACA",background:"#FEE2E2",color:"#EF4444",fontSize:12,cursor:"pointer"}} onClick={async()=>{if(!confirm(`Remover ${r.name}?`))return;await sb(`meeting_rooms?id=eq.${r.id}`,"DELETE");const rm=await sb("meeting_rooms?order=name");if(rm)setRooms(rm);}}>🗑️</button></div></div>)}
-            </div>))}
-          </div>
+          <div style={{maxHeight:150,overflowY:"auto",marginBottom:12}}>{rooms.map((r,ri)=>(<div key={r.id} style={{padding:"6px 0",borderBottom:"1px solid #f3f4f6"}}>{editRoom?.id===r.id?(<div style={{display:"flex",gap:8}}><input style={{...C.inp,flex:1,padding:"6px 10px"}} value={editRoom.name} onChange={e=>setEditRoom(p=>({...p,name:e.target.value}))} autoFocus/><button style={{...C.btnP,padding:"6px 12px",fontSize:12}} onClick={async()=>{await sb(`meeting_rooms?id=eq.${r.id}`,"PATCH",{name:editRoom.name});const rm=await sb("meeting_rooms?order=name");if(rm)setRooms(rm);setEditRoom(null);showToast("Atualizado!");}}>✓</button><button style={{...C.btnS,padding:"6px 10px",fontSize:12}} onClick={()=>setEditRoom(null)}>✕</button></div>):(<div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><div style={{display:"flex",alignItems:"center",gap:8}}><div style={{width:10,height:10,borderRadius:"50%",background:RCOLS[ri%RCOLS.length]}}/><span style={{fontWeight:600,fontSize:13}}>{r.name}</span></div><div style={{display:"flex",gap:6}}><button style={{padding:"4px 8px",borderRadius:8,border:"1px solid #e5e7eb",background:"#f9fafb",fontSize:12,cursor:"pointer"}} onClick={()=>setEditRoom({id:r.id,name:r.name})}>✏️</button><button style={{padding:"4px 8px",borderRadius:8,border:"1px solid #FECACA",background:"#FEE2E2",color:"#EF4444",fontSize:12,cursor:"pointer"}} onClick={async()=>{if(!confirm(`Remover ${r.name}?`))return;await sb(`meeting_rooms?id=eq.${r.id}`,"DELETE");const rm=await sb("meeting_rooms?order=name");if(rm)setRooms(rm);}}>🗑️</button></div></div>)}</div>))}</div>
           <div style={{height:"1px",background:"#e5e7eb",margin:"8px 0 14px"}}/>
           <div style={{fontWeight:700,fontSize:13,marginBottom:8}}>Especialistas</div>
-          <div style={{maxHeight:220,overflowY:"auto",marginBottom:8}}>
-            {specs.map(c=>(<div key={c.id} style={{padding:"6px 0",borderBottom:"1px solid #f3f4f6"}}>
-              {editSpec?.id===c.id?(<div><input style={{...C.inp,marginBottom:8,padding:"6px 10px"}} value={editSpec.name} onChange={e=>setEditSpec(p=>({...p,name:e.target.value}))} autoFocus/><div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:8}}>{QUEUES.map(q=>{const sel=editSpec.queues.includes(q.id);return<span key={q.id} style={{padding:"3px 10px",borderRadius:20,fontSize:11,cursor:"pointer",border:`2px solid ${sel?q.color:"#e5e7eb"}`,background:sel?q.light:"#fff",color:sel?q.color:"#888"}} onClick={()=>setEditSpec(p=>({...p,queues:sel?p.queues.filter(x=>x!==q.id):[...p.queues,q.id]}))}>{q.icon} {q.label}</span>;})}</div><div style={{display:"flex",gap:8}}><button style={{...C.btnP,padding:"6px 12px",fontSize:12}} onClick={async()=>{await sb(`specialists?id=eq.${c.id}`,"PATCH",{name:editSpec.name,queues:editSpec.queues});const sp=await sb("specialists?order=name");if(sp)setSpecs(sp);setEditSpec(null);showToast("Atualizado!");}}>✓ Salvar</button><button style={{...C.btnS,padding:"6px 10px",fontSize:12}} onClick={()=>setEditSpec(null)}>Cancelar</button></div></div>)
-              :(<div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><div><div style={{fontWeight:600,fontSize:13}}>{c.name}</div><div style={{fontSize:11,color:"#888"}}>{c.queues.map(q=>QUEUES.find(x=>x.id===q)?.label).join(", ")}</div></div><div style={{display:"flex",gap:6}}><button style={{padding:"4px 8px",borderRadius:8,border:"1px solid #e5e7eb",background:"#f9fafb",fontSize:12,cursor:"pointer"}} onClick={()=>setEditSpec({id:c.id,name:c.name,queues:[...c.queues]})}>✏️</button><button style={{padding:"4px 8px",borderRadius:8,border:"1px solid #FECACA",background:"#FEE2E2",color:"#EF4444",fontSize:12,cursor:"pointer"}} onClick={()=>removeSpec(c.id)}>🗑️</button></div></div>)}
-            </div>))}
-          </div>
+          <div style={{maxHeight:220,overflowY:"auto",marginBottom:8}}>{specs.map(c=>(<div key={c.id} style={{padding:"6px 0",borderBottom:"1px solid #f3f4f6"}}>{editSpec?.id===c.id?(<div><input style={{...C.inp,marginBottom:8,padding:"6px 10px"}} value={editSpec.name} onChange={e=>setEditSpec(p=>({...p,name:e.target.value}))} autoFocus/><div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:8}}>{QUEUES.map(q=>{const sel=editSpec.queues.includes(q.id);return<span key={q.id} style={{padding:"3px 10px",borderRadius:20,fontSize:11,cursor:"pointer",border:`2px solid ${sel?q.color:"#e5e7eb"}`,background:sel?q.light:"#fff",color:sel?q.color:"#888"}} onClick={()=>setEditSpec(p=>({...p,queues:sel?p.queues.filter(x=>x!==q.id):[...p.queues,q.id]}))}>{q.icon} {q.label}</span>;})}</div><div style={{display:"flex",gap:8}}><button style={{...C.btnP,padding:"6px 12px",fontSize:12}} onClick={async()=>{await sb(`specialists?id=eq.${c.id}`,"PATCH",{name:editSpec.name,queues:editSpec.queues});const sp=await sb("specialists?order=name");if(sp)setSpecs(sp);setEditSpec(null);showToast("Atualizado!");}}>✓ Salvar</button><button style={{...C.btnS,padding:"6px 10px",fontSize:12}} onClick={()=>setEditSpec(null)}>Cancelar</button></div></div>):(<div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><div><div style={{fontWeight:600,fontSize:13}}>{c.name}</div><div style={{fontSize:11,color:"#888"}}>{c.queues.map(q=>QUEUES.find(x=>x.id===q)?.label).join(", ")}</div></div><div style={{display:"flex",gap:6}}><button style={{padding:"4px 8px",borderRadius:8,border:"1px solid #e5e7eb",background:"#f9fafb",fontSize:12,cursor:"pointer"}} onClick={()=>setEditSpec({id:c.id,name:c.name,queues:[...c.queues]})}>✏️</button><button style={{padding:"4px 8px",borderRadius:8,border:"1px solid #FECACA",background:"#FEE2E2",color:"#EF4444",fontSize:12,cursor:"pointer"}} onClick={()=>removeSpec(c.id)}>🗑️</button></div></div>)}</div>))}</div>
           {!addForm?(<button style={{...C.btnS,marginBottom:8}} onClick={()=>setAddForm(true)}>+ Adicionar especialista</button>):(<div style={{padding:14,borderRadius:12,border:"1px solid #e5e7eb",background:"#fafafa",marginBottom:8}}><div style={{marginBottom:8}}><div style={{fontSize:12,fontWeight:600,color:"#555",marginBottom:4}}>Nome</div><input style={C.inp} value={newC.name} onChange={e=>setNewC(p=>({...p,name:e.target.value}))}/></div><div style={{marginBottom:10}}><div style={{fontSize:12,fontWeight:600,color:"#555",marginBottom:6}}>Filas</div><div style={{display:"flex",gap:6,flexWrap:"wrap"}}>{QUEUES.map(q=>{const sel=newC.queues.includes(q.id);return<span key={q.id} style={{padding:"4px 12px",borderRadius:20,fontSize:12,cursor:"pointer",border:`2px solid ${sel?q.color:"#e5e7eb"}`,background:sel?q.light:"#fff",color:sel?q.color:"#888",fontWeight:sel?600:400}} onClick={()=>setNewC(p=>({...p,queues:sel?p.queues.filter(x=>x!==q.id):[...p.queues,q.id]}))}>{q.icon} {q.label}</span>;})}</div></div><div style={{display:"flex",gap:8}}><button style={C.btnP} onClick={addSpec}>Adicionar</button><button style={C.btnS} onClick={()=>setAddForm(false)}>Cancelar</button></div></div>)}
           <div style={{height:"1px",background:"#e5e7eb",margin:"8px 0 12px"}}/>
           <button style={{padding:"6px 12px",borderRadius:8,border:"1px solid #FECACA",background:"#FEE2E2",color:"#EF4444",fontSize:12,fontWeight:600,cursor:"pointer"}} onClick={async()=>{if(!confirm("Limpar histórico?"))return;await sb("history","DELETE");setHist([]);showToast("Histórico limpo!");}}>🗑️ Limpar histórico</button>
         </div>
       )}
-
       {modal&&(
         <div style={{background:"#fff",borderRadius:16,padding:"1.5rem",border:"1px solid #e5e7eb",marginBottom:16,boxShadow:"0 4px 24px #7C3AED20"}}>
           {modal?.type==="nota"&&(<><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}><span style={{fontWeight:700,fontSize:15}}>📝 Nota — {modal.spec.name}</span><button style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"#aaa"}} onClick={()=>setModal(null)}>×</button></div><textarea rows={3} style={{...C.inp,resize:"none",fontFamily:f}} value={mTxt} onChange={e=>setMTxt(e.target.value)} autoFocus/><div style={{display:"flex",gap:8,marginTop:12}}><button style={C.btnP} onClick={()=>{saveNote(modal.spec,mTxt);setModal(null);}}>Salvar</button><button style={C.btnS} onClick={()=>setModal(null)}>Cancelar</button></div></>)}
@@ -748,7 +519,6 @@ export default function App(){
           {modal?.type==="pausar"&&(<><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}><span style={{fontWeight:700,fontSize:15}}>⏸ Pausar — {modal.spec.name}</span><button style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"#aaa"}} onClick={()=>setModal(null)}>×</button></div><input style={C.inp} placeholder="Motivo da pausa" value={mTxt} onChange={e=>setMTxt(e.target.value)} autoFocus/><div style={{display:"flex",gap:8,marginTop:12}}><button style={C.btnP} onClick={()=>{setPaused(modal.spec,true,mTxt);setModal(null);}}>Confirmar</button><button style={C.btnS} onClick={()=>setModal(null)}>Cancelar</button></div></>)}
         </div>
       )}
-
       {tab==="Painel"&&(<><div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(110px,1fr))",gap:10,marginBottom:16}}>{[{l:"Total",v:specs.length,c:"#7C3AED",bg:"#EDE9FE"},{l:"Ativos",v:totalActive,c:"#10B981",bg:"#D1FAE5"},{l:"Pausados",v:totalOff,c:"#F59E0B",bg:"#FEF3C7"},{l:"Novos hoje",v:normalToday,c:"#4F46E5",bg:"#E0E7FF"},{l:"Total hoje",v:totalToday,c:"#7C3AED",bg:"#EDE9FE"}].map(k=>(<div key={k.l} style={{background:k.bg,borderRadius:14,padding:"0.9rem",textAlign:"center"}}><div style={{fontSize:11,color:k.c,fontWeight:600,marginBottom:4,opacity:0.8}}>{k.l}</div><div style={{fontSize:26,fontWeight:800,color:k.c}}>{k.v}</div></div>))}</div>{specs.filter(c=>c.status!=="active").length>0&&<div style={C.card}><div style={{fontWeight:700,marginBottom:10,fontSize:14}}>⏸ Fora do rodízio</div>{specs.filter(c=>c.status!=="active").map(c=>(<div key={c.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:"1px solid #f3f4f6"}}><div style={{display:"flex",alignItems:"center",gap:8}}><div style={{width:30,height:30,borderRadius:"50%",background:"#f3f4f6",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,color:"#888"}}>{initials(c.name)}</div><div><div style={{fontWeight:600,fontSize:13}}>{c.name} {c.status==="vacation"?"🌴":"⏸"}</div>{c.note&&<div style={{fontSize:11,color:"#F59E0B"}}>{c.note}</div>}</div></div><div style={{display:"flex",gap:4}}>{c.queues.map(qId=>{const qi=QUEUES.find(x=>x.id===qId);return<span key={qId} style={{padding:"2px 8px",borderRadius:20,fontSize:11,fontWeight:600,background:qi?.light,color:qi?.color}}>{qi?.icon}</span>;})}</div></div>))}</div>}<div style={C.card}><div style={{fontWeight:700,marginBottom:12,fontSize:14}}>📊 Ranking do dia</div>{!ranking.length&&<div style={{fontSize:13,color:"#888",textAlign:"center",padding:"1rem"}}>Nenhum atendimento ainda.</div>}{ranking.map(([name,count],i)=>(<div key={name} style={{marginBottom:12}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}><div style={{display:"flex",alignItems:"center",gap:8}}><div style={{width:24,height:24,borderRadius:"50%",background:i===0?"#FEF3C7":i===1?"#f3f4f6":"#FEE2E2",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:800,color:i===0?"#B45309":i===1?"#555":"#EF4444"}}>{i+1}</div><span style={{fontSize:13,fontWeight:600}}>{name}</span></div><span style={{fontWeight:800,fontSize:14,color:"#7C3AED"}}>{count}</span></div><div style={{height:6,background:"#f3f4f6",borderRadius:4}}><div style={{height:6,borderRadius:4,background:"linear-gradient(90deg,#7C3AED,#4F46E5)",width:`${Math.round((count/maxRank)*100)}%`}}/></div></div>))}</div></>)}
       {tab==="Rodízio"&&<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(300px,1fr))",gap:16}}>{QUEUES.map(q=><QCard key={q.id} q={q}/>)}</div>}
       {tab==="Controle"&&<ControleTab/>}
