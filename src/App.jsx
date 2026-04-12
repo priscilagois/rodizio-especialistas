@@ -86,8 +86,9 @@ export default function App(){
   const [ctrlQ,setCtrlQ]=useState("USA");
   const [presM,setPresM]=useState({y:new Date().getFullYear(),m:new Date().getMonth()});
   // bkForm sem notes para evitar perda de foco
-  const [bkForm,setBkForm]=useState({room_id:"",specialist_name:"",booking_date:"",start_time:"09:00",end_time:"10:00"});
+  const [bkForm,setBkForm]=useState({room_id:"",specialist_name:"",booking_date:"",start_hour:"09",start_min:"00",end_hour:"10",end_min:"00"});
   const [bkNotes,setBkNotes]=useState("");
+  const bkNotesRef=useRef("");
   const notifRef=useRef(new Set());
 
   const [authStep,setAuthStep]=useState("idle");
@@ -198,15 +199,17 @@ export default function App(){
   }
 
   async function saveBooking(){
+    const start_time=`${bkForm.start_hour}:${bkForm.start_min}`;
+    const end_time=`${bkForm.end_hour}:${bkForm.end_min}`;
     if(!bkForm.room_id||!bkForm.specialist_name||!bkForm.booking_date){showToast("Preencha todos os campos.","error");return;}
     const room=rooms.find(r=>r.id==bkForm.room_id);
-    const conflict=bookings.find(b=>b.room_id==bkForm.room_id&&b.booking_date===bkForm.booking_date&&!(bkForm.end_time<=b.start_time||bkForm.start_time>=b.end_time));
+    const conflict=bookings.find(b=>b.room_id==bkForm.room_id&&b.booking_date===bkForm.booking_date&&!(end_time<=b.start_time||start_time>=b.end_time));
     if(conflict){showToast(`Conflito: ${conflict.specialist_name} (${conflict.start_time}–${conflict.end_time}).`,"error");return;}
     try{
-      await sb("meeting_bookings","POST",{...bkForm,notes:bkNotes,room_id:parseInt(bkForm.room_id),room_name:room?.name||"",booked_by:userName});
+      await sb("meeting_bookings","POST",{...bkForm,start_time,end_time,notes:bkNotesRef.current,room_id:parseInt(bkForm.room_id),room_name:room?.name||"",booked_by:userName});
       showToast("Reserva criada!");
-      setBkForm({room_id:"",specialist_name:"",booking_date:"",start_time:"09:00",end_time:"10:00"});
-      setBkNotes("");
+      setBkForm({room_id:"",specialist_name:"",booking_date:"",start_hour:"09",start_min:"00",end_hour:"10",end_min:"00"});
+      bkNotesRef.current="";setBkNotes("");
       const bk=await sb("meeting_bookings?order=booking_date,start_time");if(bk)setBookings(bk);
     }catch{showToast("Erro.","error");}
   }
@@ -371,6 +374,8 @@ export default function App(){
   }
 
   function SalasTab(){
+    const hours=Array.from({length:24},(_,i)=>String(i).padStart(2,"0"));
+    const mins=["00","15","30","45"];
     return(
       <div>
         <div style={{...C.card,borderLeft:"4px solid #7C3AED"}}>
@@ -391,14 +396,30 @@ export default function App(){
               <input type="date" style={C.inp} value={bkForm.booking_date} onChange={e=>setBkForm(p=>({...p,booking_date:e.target.value}))}/>
               {bkForm.booking_date&&<div style={{fontSize:11,color:"#888",marginTop:3}}>📅 {toBR(bkForm.booking_date)}</div>}
             </div>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-              <div><div style={{fontSize:12,fontWeight:600,color:"#555",marginBottom:4}}>Início</div><input type="time" style={C.inp} value={bkForm.start_time} onChange={e=>setBkForm(p=>({...p,start_time:e.target.value}))}/></div>
-              <div><div style={{fontSize:12,fontWeight:600,color:"#555",marginBottom:4}}>Fim</div><input type="time" style={C.inp} value={bkForm.end_time} onChange={e=>setBkForm(p=>({...p,end_time:e.target.value}))}/></div>
+            <div>
+              <div style={{fontSize:12,fontWeight:600,color:"#555",marginBottom:4}}>Horário</div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr auto 1fr auto 1fr auto 1fr",gap:4,alignItems:"center"}}>
+                <select style={{...C.inp,padding:"10px 6px"}} value={bkForm.start_hour} onChange={e=>setBkForm(p=>({...p,start_hour:e.target.value}))}>
+                  {hours.map(h=><option key={h} value={h}>{h}</option>)}
+                </select>
+                <span style={{textAlign:"center",fontWeight:700}}>:</span>
+                <select style={{...C.inp,padding:"10px 6px"}} value={bkForm.start_min} onChange={e=>setBkForm(p=>({...p,start_min:e.target.value}))}>
+                  {mins.map(m=><option key={m} value={m}>{m}</option>)}
+                </select>
+                <span style={{textAlign:"center",color:"#888",fontSize:12,padding:"0 2px"}}>até</span>
+                <select style={{...C.inp,padding:"10px 6px"}} value={bkForm.end_hour} onChange={e=>setBkForm(p=>({...p,end_hour:e.target.value}))}>
+                  {hours.map(h=><option key={h} value={h}>{h}</option>)}
+                </select>
+                <span style={{textAlign:"center",fontWeight:700}}>:</span>
+                <select style={{...C.inp,padding:"10px 6px"}} value={bkForm.end_min} onChange={e=>setBkForm(p=>({...p,end_min:e.target.value}))}>
+                  {mins.map(m=><option key={m} value={m}>{m}</option>)}
+                </select>
+              </div>
             </div>
           </div>
           <div style={{marginBottom:12}}>
             <div style={{fontSize:12,fontWeight:600,color:"#555",marginBottom:4}}>Observação</div>
-            <input style={C.inp} placeholder="Ex: Reunião de feedback" value={bkNotes} onChange={e=>setBkNotes(e.target.value)}/>
+            <input style={C.inp} placeholder="Ex: Reunião de feedback" defaultValue="" onChange={e=>{bkNotesRef.current=e.target.value;}}/>
           </div>
           <button style={C.btnP} onClick={saveBooking}>Reservar sala</button>
         </div>
