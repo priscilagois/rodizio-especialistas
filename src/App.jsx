@@ -426,7 +426,7 @@ export default function App(){
         <div style={{fontWeight:700,fontSize:14,margin:"4px 0 10px"}}>📅 Salas hoje — {toBR(todayISOStr)}</div>
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(260px,1fr))",gap:10,marginBottom:16}}>
           {rooms.map((room,ri)=>{
-            const rb=bookings.filter(b=>b.room_id===room.id&&b.booking_date===todayISOStr).sort((a,b)=>a.start_time.localeCompare(b.start_time));
+            const rb=bookings.filter(b=>String(b.room_id)===String(room.id)&&b.booking_date===todayISOStr).sort((a,b)=>a.start_time.localeCompare(b.start_time));
             const col=RCOLS[ri%RCOLS.length];
             return(<div key={room.id} style={{...C.card,borderTop:`4px solid ${col}`,marginBottom:0}}>
               <div style={{fontWeight:700,fontSize:14,color:col,marginBottom:10}}>{room.name}</div>
@@ -444,7 +444,7 @@ export default function App(){
         <div style={C.card}>
           {!bookings.filter(b=>b.booking_date>=todayISOStr).length&&<div style={{fontSize:13,color:"#888",textAlign:"center",padding:"1rem"}}>Nenhuma reserva.</div>}
           {bookings.filter(b=>b.booking_date>=todayISOStr).map((b,i,arr)=>{
-            const ri=rooms.findIndex(r=>r.id===b.room_id),col=RCOLS[ri>=0?ri%RCOLS.length:0];
+            const ri=rooms.findIndex(r=>String(r.id)===String(b.room_id)),col=RCOLS[ri>=0?ri%RCOLS.length:0];
             return(<div key={b.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderBottom:i<arr.length-1?"1px solid #f3f4f6":"none"}}>
               <div style={{width:8,height:8,borderRadius:"50%",background:col,flexShrink:0}}/>
               <div style={{flex:1}}><span style={{fontWeight:600,fontSize:13}}>{b.specialist_name}</span><span style={{fontSize:12,color:"#888",marginLeft:8}}>{b.room_name} · {toBR(b.booking_date)} · {b.start_time}–{b.end_time}</span></div>
