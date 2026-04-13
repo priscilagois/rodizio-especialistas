@@ -89,8 +89,12 @@ export default function App(){
   const [bkForm,setBkForm]=useState({room_id:"",specialist_name:"",booking_date:"",start_hour:"09",start_min:"00",end_hour:"10",end_min:"00"});
   const [bkNotes,setBkNotes]=useState("");
   const bkNotesRef=useRef("");
-  const [avulsoModal,setAvulsoModal]=useState(null);// {spec, qId}
+  const [avulsoModal,setAvulsoModal]=useState(null);
   const [avulsoTxt,setAvulsoTxt]=useState("");
+  const [cleanDate,setCleanDate]=useState("");
+  const [novoDiaModal,setNovoDiaModal]=useState(false);
+  const [novoDiaDate,setNovoDiaDate]=useState("");
+  const notifRef=useRef(new Set());
 
 
   const [authStep,setAuthStep]=useState("idle");
@@ -189,7 +193,15 @@ export default function App(){
       if(sp?.length)setSpecs(sp);
     }catch(e){console.error(e);showToast("Erro ao registrar indicação.","error");}
   }
-  async function addExtra(qId,specId){if(!adminOk)return;const spec=specs.find(c=>c.id===specId);if(!spec)return;try{await sb(`specialists?id=eq.${specId}`,"PATCH",{counts:{...spec.counts,[qId]:(spec.counts?.[qId]||0)+1}});await sb("history","POST",{spec_name:spec.name,queue_id:qId,type:"extra_admin",by_user:userName,date_key:today});showToast(`+1 extra: ${spec.name}`);const sp=await sb("specialists?order=name");if(sp?.length)setSpecs(sp);}catch{showToast("Erro.","error");}}
+  async function addManual(qId,specId){
+    const spec=specs.find(c=>c.id===specId);if(!spec)return;
+    try{
+      await sb("history","POST",{spec_name:spec.name,queue_id:qId,type:"manual",by_user:userName,date_key:today});
+      showToast(`+1 Avulso: ${spec.name}`);
+      const hi=await sb("history?order=created_at.desc&limit=1000");
+      if(hi?.length)setHist(hi);
+    }catch(e){console.error(e);showToast("Erro ao registrar.","error");}
+  }if(!adminOk)return;const spec=specs.find(c=>c.id===specId);if(!spec)return;try{await sb(`specialists?id=eq.${specId}`,"PATCH",{counts:{...spec.counts,[qId]:(spec.counts?.[qId]||0)+1}});await sb("history","POST",{spec_name:spec.name,queue_id:qId,type:"extra_admin",by_user:userName,date_key:today});showToast(`+1 extra: ${spec.name}`);const sp=await sb("specialists?order=name");if(sp?.length)setSpecs(sp);}catch{showToast("Erro.","error");}}
   async function toggleSel(spec){try{await sb(`specialists?id=eq.${spec.id}`,"PATCH",{selecao:!spec.selecao});const sp=await sb("specialists?order=name");if(sp?.length)setSpecs(sp);}catch{}}
   async function setVacation(spec,on,note=""){try{await sb(`specialists?id=eq.${spec.id}`,"PATCH",{status:on?"vacation":"active",note:on?note:spec.note});await sb("events","POST",{type:on?"pausa_inicio":"pausa_fim",spec_name:spec.name,detail:on?note:"Retornou de férias",by_user:userName,date_key:today});showToast(on?"Férias registradas!":"Retorno registrado!");const sp=await sb("specialists?order=name");if(sp?.length)setSpecs(sp);const ev=await sb("events?order=created_at.desc&limit=500");if(ev?.length)setEvts(ev);}catch{showToast("Erro.","error");}}
   async function setPaused(spec,on,note=""){try{await sb(`specialists?id=eq.${spec.id}`,"PATCH",{status:on?"paused":"active",note:on?note:spec.note});await sb("events","POST",{type:on?"pausa_inicio":"pausa_fim",spec_name:spec.name,detail:on?note:"Reativado",by_user:userName,date_key:today});showToast(on?"Pausado!":"Reativado!");const sp=await sb("specialists?order=name");if(sp?.length)setSpecs(sp);}catch{showToast("Erro.","error");}}
@@ -626,6 +638,7 @@ export default function App(){
         </div>
       )}
 
+      {modal&&(
         <div style={{background:"#fff",borderRadius:16,padding:"1.5rem",border:"1px solid #e5e7eb",marginBottom:16,boxShadow:"0 4px 24px #7C3AED20"}}>
           {modal?.type==="nota"&&(<><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}><span style={{fontWeight:700,fontSize:15}}>📝 Nota — {modal.spec.name}</span><button style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"#aaa"}} onClick={()=>setModal(null)}>×</button></div><textarea rows={3} style={{...C.inp,resize:"none",fontFamily:f}} value={mTxt} onChange={e=>setMTxt(e.target.value)} autoFocus/><div style={{display:"flex",gap:8,marginTop:12}}><button style={C.btnP} onClick={()=>{saveNote(modal.spec,mTxt);setModal(null);}}>Salvar</button><button style={C.btnS} onClick={()=>setModal(null)}>Cancelar</button></div></>)}
           {modal?.type==="vacation"&&(<><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}><span style={{fontWeight:700,fontSize:15}}>🌴 Férias — {modal.spec.name}</span><button style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"#aaa"}} onClick={()=>setModal(null)}>×</button></div><input style={C.inp} placeholder="Motivo / data de retorno" value={mTxt} onChange={e=>setMTxt(e.target.value)} autoFocus/><div style={{display:"flex",gap:8,marginTop:12}}><button style={{...C.btnP,background:"#10B981"}} onClick={()=>{setVacation(modal.spec,true,mTxt);setModal(null);}}>Confirmar</button><button style={C.btnS} onClick={()=>setModal(null)}>Cancelar</button></div></>)}
