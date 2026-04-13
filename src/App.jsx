@@ -89,7 +89,8 @@ export default function App(){
   const [bkForm,setBkForm]=useState({room_id:"",specialist_name:"",booking_date:"",start_hour:"09",start_min:"00",end_hour:"10",end_min:"00"});
   const [bkNotes,setBkNotes]=useState("");
   const bkNotesRef=useRef("");
-  const [cleanDate,setCleanDate]=useState("");
+  const [avulsoModal,setAvulsoModal]=useState(null);// {spec, qId}
+  const [avulsoTxt,setAvulsoTxt]=useState("");
 
 
   const [authStep,setAuthStep]=useState("idle");
@@ -341,7 +342,7 @@ export default function App(){
                   <button style={{padding:"3px 9px",borderRadius:8,border:"none",background:isPaused?"#EDE9FE":"#f3f4f6",cursor:"pointer",fontSize:11,fontWeight:600,color:isPaused?"#7C3AED":"#888"}} onClick={()=>{if(!isPaused){setMTxt("");setModal({type:"pausar",spec:c});}else setPaused(c,false);}}>⏸ Pausa</button>
                   <button style={{padding:"3px 9px",borderRadius:8,border:"none",background:"#f3f4f6",cursor:"pointer",fontSize:11,fontWeight:600,color:"#888"}} onClick={()=>{setMTxt(c.note||"");setModal({type:"nota",spec:c});}}>📝 Nota</button>
                   <span style={{padding:"3px 9px",borderRadius:8,fontSize:11,fontWeight:600,background:credits>0?"#FEF3C7":"#f3f4f6",color:credits>0?"#B45309":"#aaa",cursor:"pointer"}} onClick={()=>addInd(qId,c.id)}>📌 {credits}</span>
-                  <span style={{padding:"3px 9px",borderRadius:8,fontSize:11,fontWeight:600,background:"#D1FAE5",color:"#10B981",cursor:"pointer"}} onClick={()=>setModal({type:"manual",spec:c,qId})}>+1 Avulso</span>
+                  <span style={{padding:"3px 9px",borderRadius:8,fontSize:11,fontWeight:600,background:"#D1FAE5",color:"#10B981",cursor:"pointer"}} onClick={()=>{setAvulsoTxt("");setAvulsoModal({spec:c,qId});}}>+1 Avulso</span>
                 </div>
               </div>
             );
@@ -607,7 +608,21 @@ export default function App(){
           </div>
         </div>
       )}
-      {modal&&(
+      {avulsoModal&&(
+        <div style={{background:"#fff",borderRadius:16,padding:"1.5rem",border:"1px solid #e5e7eb",marginBottom:16,boxShadow:"0 4px 24px #7C3AED20"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+            <span style={{fontWeight:700,fontSize:15}}>+1 Avulso — {avulsoModal.spec.name}</span>
+            <button style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"#aaa"}} onClick={()=>{setAvulsoModal(null);setAvulsoTxt("");}}>×</button>
+          </div>
+          <div style={{fontSize:13,color:"#555",marginBottom:8}}>Informe o motivo (ex: cliente presencial, retorno, indicação gerencial)</div>
+          <input style={C.inp} placeholder="Motivo obrigatório" value={avulsoTxt} onChange={e=>setAvulsoTxt(e.target.value)} autoFocus onKeyDown={e=>{if(e.key==="Enter"&&avulsoTxt.trim()){addManual(avulsoModal.qId,avulsoModal.spec.id,avulsoTxt);setAvulsoModal(null);setAvulsoTxt("");}}}/>
+          <div style={{display:"flex",gap:8,marginTop:12}}>
+            <button style={{...C.btnP,background:"#10B981"}} onClick={()=>{if(!avulsoTxt.trim()){showToast("Informe o motivo","error");return;}addManual(avulsoModal.qId,avulsoModal.spec.id,avulsoTxt);setAvulsoModal(null);setAvulsoTxt("");}}>Confirmar</button>
+            <button style={C.btnS} onClick={()=>{setAvulsoModal(null);setAvulsoTxt("");}}>Cancelar</button>
+          </div>
+        </div>
+      )}
+
         <div style={{background:"#fff",borderRadius:16,padding:"1.5rem",border:"1px solid #e5e7eb",marginBottom:16,boxShadow:"0 4px 24px #7C3AED20"}}>
           {modal?.type==="nota"&&(<><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}><span style={{fontWeight:700,fontSize:15}}>📝 Nota — {modal.spec.name}</span><button style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"#aaa"}} onClick={()=>setModal(null)}>×</button></div><textarea rows={3} style={{...C.inp,resize:"none",fontFamily:f}} value={mTxt} onChange={e=>setMTxt(e.target.value)} autoFocus/><div style={{display:"flex",gap:8,marginTop:12}}><button style={C.btnP} onClick={()=>{saveNote(modal.spec,mTxt);setModal(null);}}>Salvar</button><button style={C.btnS} onClick={()=>setModal(null)}>Cancelar</button></div></>)}
           {modal?.type==="vacation"&&(<><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}><span style={{fontWeight:700,fontSize:15}}>🌴 Férias — {modal.spec.name}</span><button style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"#aaa"}} onClick={()=>setModal(null)}>×</button></div><input style={C.inp} placeholder="Motivo / data de retorno" value={mTxt} onChange={e=>setMTxt(e.target.value)} autoFocus/><div style={{display:"flex",gap:8,marginTop:12}}><button style={{...C.btnP,background:"#10B981"}} onClick={()=>{setVacation(modal.spec,true,mTxt);setModal(null);}}>Confirmar</button><button style={C.btnS} onClick={()=>setModal(null)}>Cancelar</button></div></>)}
