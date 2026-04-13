@@ -359,10 +359,10 @@ export default function App(){
       const all=QUEUES.map(q=>{const wd2=getWorkdays(ctrlM.y,ctrlM.m),inQq=specs.filter(c=>c.queues.includes(q.id));const c2=(n,dk,t)=>hist.filter(h=>h.spec_name===n&&h.date_key===dk&&h.queue_id===q.id&&h.type===t).length;const cm2=(n,t)=>hist.filter(h=>{if(h.spec_name!==n||h.queue_id!==q.id||h.type!==t)return false;const p=h.date_key?.split("/");return p&&parseInt(p[1])===ctrlM.m+1&&parseInt(p[2])===ctrlM.y;}).length;const dH=wd2.map(d=>`<th colspan="2">${d.toLocaleDateString("pt-BR",{day:"2-digit",month:"2-digit"})}</th>`).join("");const sH=wd2.map(()=>`<th class="n">N</th><th class="i">I</th>`).join("");const rows=inQq.map(c=>{const tN=cm2(c.name,"normal"),tI=cm2(c.name,"indicacao")+cm2(c.name,"selecao");const cells=wd2.map(d=>{const dk=d.toLocaleDateString("pt-BR"),n=c2(c.name,dk,"normal"),ii=c2(c.name,dk,"indicacao")+c2(c.name,dk,"selecao");return`<td class="${n>0?"nv":"e"}">${n||"—"}</td><td class="${ii>0?"iv":"e"}">${ii||"—"}</td>`;}).join("");return`<tr><td class="name">${c.name}</td>${cells}<td class="tn">${tN||"—"}</td><td class="ti">${tI||"—"}</td></tr>`;}).join("");const tot=`<tr class="tot"><td class="name">TOTAL</td>${wd2.map(d=>{const dk=d.toLocaleDateString("pt-BR"),n=inQq.reduce((a,c)=>a+c2(c.name,dk,"normal"),0),ii=inQq.reduce((a,c)=>a+c2(c.name,dk,"indicacao")+c2(c.name,dk,"selecao"),0);return`<td class="${n>0?"nv":"e"}">${n||"—"}</td><td class="${ii>0?"iv":"e"}">${ii||"—"}</td>`;}).join("")}<td class="tn">${inQq.reduce((a,c)=>a+cm2(c.name,"normal"),0)||"—"}</td><td class="ti">${inQq.reduce((a,c)=>a+cm2(c.name,"indicacao")+cm2(c.name,"selecao"),0)||"—"}</td></tr>`;return`<h3>${q.icon} ${q.label}</h3><table><thead><tr><th rowspan="2" class="name">Especialista</th>${dH}<th colspan="2" class="tot-h">Total</th></tr><tr>${sH}<th class="n">N</th><th class="i">I</th></tr></thead><tbody>${rows}${tot}</tbody></table>`;}).join("");
       return`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Rodízio — ${MONTHS[ctrlM.m]} ${ctrlM.y}</title><style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:Arial,sans-serif;font-size:11px;padding:20px}h1{font-size:16px;color:#7C3AED;margin-bottom:4px}p{color:#888;margin-bottom:4px}h3{font-size:13px;color:#7C3AED;margin:20px 0 6px}table{border-collapse:collapse;width:100%}th,td{border:0.5px solid #e0ddf8;padding:4px 6px;text-align:center;white-space:nowrap}th{background:#f5f3ff;color:#534AB7}.tot-h{background:#d8d4fc;color:#3C3489}.name{text-align:left;min-width:110px;font-weight:500}.n{color:#7C3AED;font-size:10px}.i{color:#F59E0B;font-size:10px}.nv{background:#EDE9FE;color:#534AB7;font-weight:500}.iv{background:#FEF3C7;color:#B45309;font-weight:500}.e{color:#ccc}.tn{background:#EDE9FE;color:#534AB7;font-weight:700}.ti{background:#FEF3C7;color:#B45309;font-weight:700}.tot td{background:#f5f3ff;font-weight:700;border-top:2px solid #C4B5F4}</style></head><body><h1>Rodízio de Especialistas</h1><p>${MONTHS[ctrlM.m]} ${ctrlM.y}</p>${all}</body></html>`;
     }
-    const th={padding:"4px 6px",fontSize:11,fontWeight:600,textAlign:"center",border:"1px solid #c4b5fd",background:"#f9fafb",whiteSpace:"nowrap",color:"#555"};
+    const th={padding:"4px 6px",fontSize:11,fontWeight:600,textAlign:"center",border:"1px solid #d1d5db",background:"#f9fafb",whiteSpace:"nowrap",color:"#555"};
     const td={padding:"4px 6px",fontSize:12,textAlign:"center",border:"1px solid #e5e7eb",whiteSpace:"nowrap"};
-    const thDay={...th,borderLeft:"2px solid #7C3AED"};
-    const tdDayFirst={...td,borderLeft:"2px solid #c4b5fd"};
+    const thDay={...th,borderLeft:"3px solid #7C3AED"};
+    const tdDayFirst={...td,borderLeft:"3px solid #c4b5fd"};
     return(
       <div>
         <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap",alignItems:"center"}}>
@@ -377,11 +377,11 @@ export default function App(){
             <button style={{...C.btnP,fontSize:12}} onClick={()=>{const blob=new Blob([buildHTML()],{type:"text/html;charset=utf-8"});const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download=`rodizio_${MONTHS[ctrlM.m]}_${ctrlM.y}.html`;a.click();URL.revokeObjectURL(url);}}>⬇️ Baixar</button>
           </div>
         </div>
-        <div style={{overflowX:"auto",borderRadius:12,border:"1px solid #e5e7eb",background:"#fff"}}>
-          <table style={{borderCollapse:"collapse",minWidth:"100%"}}>
+        <div style={{overflowX:"auto",borderRadius:12,border:"1px solid #e5e7eb",background:"#fff",position:"relative"}}>
+          <table style={{borderCollapse:"collapse",minWidth:"100%",tableLayout:"fixed"}}>
             <thead>
               <tr>
-                <th style={{...th,textAlign:"left",minWidth:130}} rowSpan={2}>Especialista</th>
+                <th style={{...th,textAlign:"left",minWidth:130,position:"sticky",left:0,zIndex:3,boxShadow:"2px 0 4px #0002"}} rowSpan={2}>Especialista</th>
                 {wd.map(d=><th key={d.toISOString()} style={{...thDay,minWidth:72}} colSpan={3}>{d.toLocaleDateString("pt-BR",{day:"2-digit",month:"2-digit"})}</th>)}
                 <th style={{...thDay,background:qInfo.light,color:qInfo.color}} colSpan={3}>Total</th>
               </tr>
