@@ -613,61 +613,66 @@ export default function App(){
         </div>
       )}
       {tab==="Painel"&&(<>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(110px,1fr))",gap:10,marginBottom:16}}>
-          {[{l:"Total",v:specs.length,c:"#7C3AED",bg:"#EDE9FE"},{l:"Ativos",v:totalActive,c:"#10B981",bg:"#D1FAE5"},{l:"Pausados",v:totalOff,c:"#F59E0B",bg:"#FEF3C7"},{l:"Novos hoje",v:normalToday,c:"#4F46E5",bg:"#E0E7FF"},{l:"Total hoje",v:totalToday,c:"#7C3AED",bg:"#EDE9FE"}].map(k=>(<div key={k.l} style={{background:k.bg,borderRadius:14,padding:"0.9rem",textAlign:"center"}}><div style={{fontSize:11,color:k.c,fontWeight:600,marginBottom:4,opacity:0.8}}>{k.l}</div><div style={{fontSize:26,fontWeight:800,color:k.c}}>{k.v}</div></div>))}
-        </div>
-        {specs.filter(c=>c.status!=="active").length>0&&<div style={C.card}><div style={{fontWeight:700,marginBottom:10,fontSize:14}}>⏸ Fora do rodízio</div>{specs.filter(c=>c.status!=="active").map(c=>(<div key={c.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:"1px solid #f3f4f6"}}><div style={{display:"flex",alignItems:"center",gap:8}}><div style={{width:30,height:30,borderRadius:"50%",background:"#f3f4f6",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,color:"#888"}}>{initials(c.name)}</div><div><div style={{fontWeight:600,fontSize:13}}>{c.name} {c.status==="vacation"?"🌴":"⏸"}</div>{c.note&&<div style={{fontSize:11,color:"#F59E0B"}}>{c.note}</div>}</div></div><div style={{display:"flex",gap:4}}>{c.queues.map(qId=>{const qi=QUEUES.find(x=>x.id===qId);return<span key={qId} style={{padding:"2px 8px",borderRadius:20,fontSize:11,fontWeight:600,background:qi?.light,color:qi?.color}}>{qi?.icon}</span>;})}</div></div>))}</div>}
         {QUEUES.map(q=>{
           const inQ=[...specs.filter(c=>c.queues.includes(q.id))].sort((a,b)=>a.name.localeCompare(b.name,"pt"));
           if(!inQ.length)return null;
-          // quem começou o rodízio hoje = primeiro registro normal do dia neste setor
           const firstToday=hist.filter(h=>h.queue_id===q.id&&h.date_key===today&&h.type==="normal").sort((a,b)=>new Date(a.created_at)-new Date(b.created_at))[0];
+          const totalSetor=inQ.reduce((acc,c)=>acc+hist.filter(h=>h.spec_name===c.name&&h.queue_id===q.id&&h.date_key===today).length,0);
           return(
-            <div key={q.id} style={{...C.card,borderTop:`4px solid ${q.color}`,padding:0,overflow:"hidden",marginBottom:14}}>
-              <div style={{padding:"10px 16px",background:`linear-gradient(135deg,${q.color}15,${q.light})`,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+            <div key={q.id} style={{...C.card,padding:0,overflow:"hidden",marginBottom:14}}>
+              {/* Cabeçalho do setor */}
+              <div style={{padding:"8px 16px",background:q.color,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
                 <div style={{display:"flex",alignItems:"center",gap:8}}>
-                  <span style={{fontSize:20}}>{q.icon}</span>
-                  <span style={{fontWeight:700,fontSize:15,color:q.color}}>{q.label}</span>
-                  <span style={{fontSize:12,color:q.color,background:"#fff",borderRadius:20,padding:"1px 10px",fontWeight:600}}>{inQ.filter(c=>c.status==="active").length} ativos</span>
+                  <span style={{fontSize:18}}>{q.icon}</span>
+                  <span style={{fontWeight:700,fontSize:14,color:"#fff"}}>{q.label}</span>
+                  <span style={{fontSize:11,color:"#ffffff99",fontWeight:500}}>{inQ.filter(c=>c.status==="active").length} ativos</span>
                 </div>
-                {firstToday&&<div style={{fontSize:12,color:q.color,fontWeight:600}}>🏁 Iniciou: {firstToday.spec_name}</div>}
+                <div style={{display:"flex",gap:12,alignItems:"center"}}>
+                  {firstToday&&<span style={{fontSize:11,color:"#ffffffcc"}}>🏁 Iniciou: <strong style={{color:"#fff"}}>{firstToday.spec_name}</strong></span>}
+                  <span style={{fontSize:11,color:"#fff",background:"rgba(255,255,255,0.2)",borderRadius:20,padding:"2px 10px",fontWeight:700}}>Total hoje: {totalSetor}</span>
+                </div>
               </div>
+              {/* Tabela */}
               <table style={{width:"100%",borderCollapse:"collapse"}}>
                 <thead>
-                  <tr style={{background:"#f9fafb"}}>
-                    <th style={{padding:"6px 16px",fontSize:11,fontWeight:600,color:"#888",textAlign:"left",borderBottom:"1px solid #f3f4f6"}}>Especialista</th>
-                    <th style={{padding:"6px 8px",fontSize:11,fontWeight:600,color:"#888",textAlign:"center",borderBottom:"1px solid #f3f4f6"}}>Status</th>
-                    <th style={{padding:"6px 8px",fontSize:11,fontWeight:600,color:"#888",textAlign:"left",borderBottom:"1px solid #f3f4f6"}}>Observação</th>
-                    <th style={{padding:"6px 16px",fontSize:11,fontWeight:600,color:q.color,textAlign:"center",borderBottom:"1px solid #f3f4f6"}}>Hoje</th>
-                    <th style={{padding:"6px 16px",fontSize:11,fontWeight:600,color:"#888",textAlign:"center",borderBottom:"1px solid #f3f4f6"}}>Total</th>
+                  <tr style={{background:"#f9fafb",borderBottom:"2px solid #e5e7eb"}}>
+                    <th style={{padding:"6px 16px",fontSize:11,fontWeight:700,color:"#555",textAlign:"left",width:"30%"}}>Especialista</th>
+                    <th style={{padding:"6px 8px",fontSize:11,fontWeight:700,color:"#7C3AED",textAlign:"center"}}>Normal</th>
+                    <th style={{padding:"6px 8px",fontSize:11,fontWeight:700,color:"#F59E0B",textAlign:"center"}}>Indicação</th>
+                    <th style={{padding:"6px 8px",fontSize:11,fontWeight:700,color:"#10B981",textAlign:"center"}}>Recart.</th>
+                    <th style={{padding:"6px 8px",fontSize:11,fontWeight:700,color:"#4F46E5",textAlign:"center"}}>+1 Avulso</th>
+                    <th style={{padding:"6px 16px",fontSize:11,fontWeight:700,color:"#222",textAlign:"center"}}>Total dia</th>
+                    <th style={{padding:"6px 16px",fontSize:11,fontWeight:700,color:"#888",textAlign:"left"}}>Observação</th>
                   </tr>
                 </thead>
                 <tbody>
                   {inQ.map((c,i)=>{
                     const isVac=c.status==="vacation",isPaused=c.status==="paused",off=c.status!=="active";
-                    const todayCount=hist.filter(h=>h.spec_name===c.name&&h.queue_id===q.id&&h.date_key===today).length;
-                    const tot=(c.counts?.[q.id]||0)+(c.ind?.[q.id]||0);
+                    const hToday=hist.filter(h=>h.spec_name===c.name&&h.queue_id===q.id&&h.date_key===today);
+                    const nNormal=hToday.filter(h=>h.type==="normal").length;
+                    const nInd=hToday.filter(h=>h.type==="indicacao"||h.type==="selecao").length;
+                    const nRT=hToday.filter(h=>h.type==="recart_ferias").length;
+                    const nAvulso=hToday.filter(h=>h.type==="manual"||h.type==="extra_admin").length;
+                    const total=hToday.length;
+                    const rowBg=off?"#FFF0F0":i%2===0?"#fff":"#fafafa";
+                    const textColor=off?"#cc0000":"#222";
                     return(
-                      <tr key={c.id} style={{opacity:off?0.5:1,background:i%2===0?"#fff":"#fafafa"}}>
-                        <td style={{padding:"8px 16px",borderBottom:"1px solid #f3f4f6"}}>
+                      <tr key={c.id} style={{background:rowBg,borderBottom:"1px solid #f3f4f6"}}>
+                        <td style={{padding:"8px 16px"}}>
                           <div style={{display:"flex",alignItems:"center",gap:8}}>
-                            <div style={{width:26,height:26,borderRadius:"50%",background:off?"#e5e7eb":q.light,display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,fontWeight:700,color:off?"#999":q.color,flexShrink:0}}>{initials(c.name)}</div>
-                            <span style={{fontWeight:600,fontSize:13}}>{c.name}</span>
-                            {c.selecao&&<span style={{fontSize:11}}>⭐</span>}
+                            <div style={{width:24,height:24,borderRadius:"50%",background:off?"#fecaca":q.light,display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,fontWeight:700,color:off?"#cc0000":q.color,flexShrink:0}}>{initials(c.name)}</div>
+                            <span style={{fontWeight:600,fontSize:13,color:textColor}}>{c.name}</span>
+                            {c.selecao&&!off&&<span style={{fontSize:11}}>⭐</span>}
+                            {isVac&&<span style={{fontSize:10,background:"#fecaca",color:"#cc0000",borderRadius:20,padding:"1px 7px",fontWeight:600}}>🌴 Férias</span>}
+                            {isPaused&&<span style={{fontSize:10,background:"#fecaca",color:"#cc0000",borderRadius:20,padding:"1px 7px",fontWeight:600}}>⏸ Pausa</span>}
                           </div>
                         </td>
-                        <td style={{padding:"8px",textAlign:"center",borderBottom:"1px solid #f3f4f6"}}>
-                          {isVac?<span style={{background:"#D1FAE5",color:"#059669",borderRadius:20,padding:"2px 8px",fontSize:11,fontWeight:600}}>🌴 Férias</span>
-                          :isPaused?<span style={{background:"#EDE9FE",color:"#7C3AED",borderRadius:20,padding:"2px 8px",fontSize:11,fontWeight:600}}>⏸ Pausa</span>
-                          :<span style={{background:"#D1FAE5",color:"#10B981",borderRadius:20,padding:"2px 8px",fontSize:11,fontWeight:600}}>✓ Ativo</span>}
-                        </td>
-                        <td style={{padding:"8px",fontSize:12,color:"#F59E0B",fontWeight:500,borderBottom:"1px solid #f3f4f6"}}>{c.note||"—"}</td>
-                        <td style={{padding:"8px 16px",textAlign:"center",borderBottom:"1px solid #f3f4f6"}}>
-                          <span style={{fontWeight:700,fontSize:14,color:todayCount>0?q.color:"#ccc"}}>{todayCount||"—"}</span>
-                        </td>
-                        <td style={{padding:"8px 16px",textAlign:"center",borderBottom:"1px solid #f3f4f6"}}>
-                          <span style={{fontWeight:600,fontSize:13,color:"#888"}}>{tot||"—"}</span>
-                        </td>
+                        <td style={{padding:"8px",textAlign:"center"}}><span style={{fontWeight:700,fontSize:14,color:nNormal>0?"#7C3AED":"#ddd"}}>{nNormal||"—"}</span></td>
+                        <td style={{padding:"8px",textAlign:"center"}}><span style={{fontWeight:700,fontSize:14,color:nInd>0?"#F59E0B":"#ddd"}}>{nInd||"—"}</span></td>
+                        <td style={{padding:"8px",textAlign:"center"}}><span style={{fontWeight:700,fontSize:14,color:nRT>0?"#10B981":"#ddd"}}>{nRT||"—"}</span></td>
+                        <td style={{padding:"8px",textAlign:"center"}}><span style={{fontWeight:700,fontSize:14,color:nAvulso>0?"#4F46E5":"#ddd"}}>{nAvulso||"—"}</span></td>
+                        <td style={{padding:"8px 16px",textAlign:"center"}}><span style={{fontWeight:800,fontSize:15,color:total>0?"#222":"#ddd"}}>{total||"—"}</span></td>
+                        <td style={{padding:"8px 16px",fontSize:12,color:off?"#cc0000":"#F59E0B",fontWeight:500}}>{c.note||""}</td>
                       </tr>
                     );
                   })}
@@ -676,6 +681,10 @@ export default function App(){
             </div>
           );
         })}
+        {/* Cards de resumo no final */}
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(110px,1fr))",gap:10,marginTop:4}}>
+          {[{l:"Total",v:specs.length,c:"#7C3AED",bg:"#EDE9FE"},{l:"Ativos",v:totalActive,c:"#10B981",bg:"#D1FAE5"},{l:"Pausados",v:totalOff,c:"#F59E0B",bg:"#FEF3C7"},{l:"Novos hoje",v:normalToday,c:"#4F46E5",bg:"#E0E7FF"},{l:"Total hoje",v:totalToday,c:"#7C3AED",bg:"#EDE9FE"}].map(k=>(<div key={k.l} style={{background:k.bg,borderRadius:14,padding:"0.9rem",textAlign:"center"}}><div style={{fontSize:11,color:k.c,fontWeight:600,marginBottom:4,opacity:0.8}}>{k.l}</div><div style={{fontSize:26,fontWeight:800,color:k.c}}>{k.v}</div></div>))}
+        </div>
       </>)}
       {tab==="Rodízio"&&<>
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(300px,1fr))",gap:16}}>{QUEUES.map(q=><QCard key={q.id} q={q}/>)}</div>
