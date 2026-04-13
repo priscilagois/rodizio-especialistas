@@ -612,7 +612,71 @@ export default function App(){
           {modal?.type==="pausar"&&(<><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}><span style={{fontWeight:700,fontSize:15}}>⏸ Pausar — {modal.spec.name}</span><button style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"#aaa"}} onClick={()=>setModal(null)}>×</button></div><input style={C.inp} placeholder="Motivo da pausa" value={mTxt} onChange={e=>setMTxt(e.target.value)} autoFocus/><div style={{display:"flex",gap:8,marginTop:12}}><button style={C.btnP} onClick={()=>{setPaused(modal.spec,true,mTxt);setModal(null);}}>Confirmar</button><button style={C.btnS} onClick={()=>setModal(null)}>Cancelar</button></div></>)}
         </div>
       )}
-      {tab==="Painel"&&(<><div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(110px,1fr))",gap:10,marginBottom:16}}>{[{l:"Total",v:specs.length,c:"#7C3AED",bg:"#EDE9FE"},{l:"Ativos",v:totalActive,c:"#10B981",bg:"#D1FAE5"},{l:"Pausados",v:totalOff,c:"#F59E0B",bg:"#FEF3C7"},{l:"Novos hoje",v:normalToday,c:"#4F46E5",bg:"#E0E7FF"},{l:"Total hoje",v:totalToday,c:"#7C3AED",bg:"#EDE9FE"}].map(k=>(<div key={k.l} style={{background:k.bg,borderRadius:14,padding:"0.9rem",textAlign:"center"}}><div style={{fontSize:11,color:k.c,fontWeight:600,marginBottom:4,opacity:0.8}}>{k.l}</div><div style={{fontSize:26,fontWeight:800,color:k.c}}>{k.v}</div></div>))}</div>{specs.filter(c=>c.status!=="active").length>0&&<div style={C.card}><div style={{fontWeight:700,marginBottom:10,fontSize:14}}>⏸ Fora do rodízio</div>{specs.filter(c=>c.status!=="active").map(c=>(<div key={c.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:"1px solid #f3f4f6"}}><div style={{display:"flex",alignItems:"center",gap:8}}><div style={{width:30,height:30,borderRadius:"50%",background:"#f3f4f6",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,color:"#888"}}>{initials(c.name)}</div><div><div style={{fontWeight:600,fontSize:13}}>{c.name} {c.status==="vacation"?"🌴":"⏸"}</div>{c.note&&<div style={{fontSize:11,color:"#F59E0B"}}>{c.note}</div>}</div></div><div style={{display:"flex",gap:4}}>{c.queues.map(qId=>{const qi=QUEUES.find(x=>x.id===qId);return<span key={qId} style={{padding:"2px 8px",borderRadius:20,fontSize:11,fontWeight:600,background:qi?.light,color:qi?.color}}>{qi?.icon}</span>;})}</div></div>))}</div>}<div style={C.card}><div style={{fontWeight:700,marginBottom:12,fontSize:14}}>📊 Ranking do dia</div>{!ranking.length&&<div style={{fontSize:13,color:"#888",textAlign:"center",padding:"1rem"}}>Nenhum atendimento ainda.</div>}{ranking.map(([name,count],i)=>(<div key={name} style={{marginBottom:12}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}><div style={{display:"flex",alignItems:"center",gap:8}}><div style={{width:24,height:24,borderRadius:"50%",background:i===0?"#FEF3C7":i===1?"#f3f4f6":"#FEE2E2",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:800,color:i===0?"#B45309":i===1?"#555":"#EF4444"}}>{i+1}</div><span style={{fontSize:13,fontWeight:600}}>{name}</span></div><span style={{fontWeight:800,fontSize:14,color:"#7C3AED"}}>{count}</span></div><div style={{height:6,background:"#f3f4f6",borderRadius:4}}><div style={{height:6,borderRadius:4,background:"linear-gradient(90deg,#7C3AED,#4F46E5)",width:`${Math.round((count/maxRank)*100)}%`}}/></div></div>))}</div></>)}
+      {tab==="Painel"&&(<>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(110px,1fr))",gap:10,marginBottom:16}}>
+          {[{l:"Total",v:specs.length,c:"#7C3AED",bg:"#EDE9FE"},{l:"Ativos",v:totalActive,c:"#10B981",bg:"#D1FAE5"},{l:"Pausados",v:totalOff,c:"#F59E0B",bg:"#FEF3C7"},{l:"Novos hoje",v:normalToday,c:"#4F46E5",bg:"#E0E7FF"},{l:"Total hoje",v:totalToday,c:"#7C3AED",bg:"#EDE9FE"}].map(k=>(<div key={k.l} style={{background:k.bg,borderRadius:14,padding:"0.9rem",textAlign:"center"}}><div style={{fontSize:11,color:k.c,fontWeight:600,marginBottom:4,opacity:0.8}}>{k.l}</div><div style={{fontSize:26,fontWeight:800,color:k.c}}>{k.v}</div></div>))}
+        </div>
+        {specs.filter(c=>c.status!=="active").length>0&&<div style={C.card}><div style={{fontWeight:700,marginBottom:10,fontSize:14}}>⏸ Fora do rodízio</div>{specs.filter(c=>c.status!=="active").map(c=>(<div key={c.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:"1px solid #f3f4f6"}}><div style={{display:"flex",alignItems:"center",gap:8}}><div style={{width:30,height:30,borderRadius:"50%",background:"#f3f4f6",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,color:"#888"}}>{initials(c.name)}</div><div><div style={{fontWeight:600,fontSize:13}}>{c.name} {c.status==="vacation"?"🌴":"⏸"}</div>{c.note&&<div style={{fontSize:11,color:"#F59E0B"}}>{c.note}</div>}</div></div><div style={{display:"flex",gap:4}}>{c.queues.map(qId=>{const qi=QUEUES.find(x=>x.id===qId);return<span key={qId} style={{padding:"2px 8px",borderRadius:20,fontSize:11,fontWeight:600,background:qi?.light,color:qi?.color}}>{qi?.icon}</span>;})}</div></div>))}</div>}
+        {QUEUES.map(q=>{
+          const inQ=[...specs.filter(c=>c.queues.includes(q.id))].sort((a,b)=>a.name.localeCompare(b.name,"pt"));
+          if(!inQ.length)return null;
+          // quem começou o rodízio hoje = primeiro registro normal do dia neste setor
+          const firstToday=hist.filter(h=>h.queue_id===q.id&&h.date_key===today&&h.type==="normal").sort((a,b)=>new Date(a.created_at)-new Date(b.created_at))[0];
+          return(
+            <div key={q.id} style={{...C.card,borderTop:`4px solid ${q.color}`,padding:0,overflow:"hidden",marginBottom:14}}>
+              <div style={{padding:"10px 16px",background:`linear-gradient(135deg,${q.color}15,${q.light})`,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                <div style={{display:"flex",alignItems:"center",gap:8}}>
+                  <span style={{fontSize:20}}>{q.icon}</span>
+                  <span style={{fontWeight:700,fontSize:15,color:q.color}}>{q.label}</span>
+                  <span style={{fontSize:12,color:q.color,background:"#fff",borderRadius:20,padding:"1px 10px",fontWeight:600}}>{inQ.filter(c=>c.status==="active").length} ativos</span>
+                </div>
+                {firstToday&&<div style={{fontSize:12,color:q.color,fontWeight:600}}>🏁 Iniciou: {firstToday.spec_name}</div>}
+              </div>
+              <table style={{width:"100%",borderCollapse:"collapse"}}>
+                <thead>
+                  <tr style={{background:"#f9fafb"}}>
+                    <th style={{padding:"6px 16px",fontSize:11,fontWeight:600,color:"#888",textAlign:"left",borderBottom:"1px solid #f3f4f6"}}>Especialista</th>
+                    <th style={{padding:"6px 8px",fontSize:11,fontWeight:600,color:"#888",textAlign:"center",borderBottom:"1px solid #f3f4f6"}}>Status</th>
+                    <th style={{padding:"6px 8px",fontSize:11,fontWeight:600,color:"#888",textAlign:"left",borderBottom:"1px solid #f3f4f6"}}>Observação</th>
+                    <th style={{padding:"6px 16px",fontSize:11,fontWeight:600,color:q.color,textAlign:"center",borderBottom:"1px solid #f3f4f6"}}>Hoje</th>
+                    <th style={{padding:"6px 16px",fontSize:11,fontWeight:600,color:"#888",textAlign:"center",borderBottom:"1px solid #f3f4f6"}}>Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {inQ.map((c,i)=>{
+                    const isVac=c.status==="vacation",isPaused=c.status==="paused",off=c.status!=="active";
+                    const todayCount=hist.filter(h=>h.spec_name===c.name&&h.queue_id===q.id&&h.date_key===today).length;
+                    const tot=(c.counts?.[q.id]||0)+(c.ind?.[q.id]||0);
+                    return(
+                      <tr key={c.id} style={{opacity:off?0.5:1,background:i%2===0?"#fff":"#fafafa"}}>
+                        <td style={{padding:"8px 16px",borderBottom:"1px solid #f3f4f6"}}>
+                          <div style={{display:"flex",alignItems:"center",gap:8}}>
+                            <div style={{width:26,height:26,borderRadius:"50%",background:off?"#e5e7eb":q.light,display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,fontWeight:700,color:off?"#999":q.color,flexShrink:0}}>{initials(c.name)}</div>
+                            <span style={{fontWeight:600,fontSize:13}}>{c.name}</span>
+                            {c.selecao&&<span style={{fontSize:11}}>⭐</span>}
+                          </div>
+                        </td>
+                        <td style={{padding:"8px",textAlign:"center",borderBottom:"1px solid #f3f4f6"}}>
+                          {isVac?<span style={{background:"#D1FAE5",color:"#059669",borderRadius:20,padding:"2px 8px",fontSize:11,fontWeight:600}}>🌴 Férias</span>
+                          :isPaused?<span style={{background:"#EDE9FE",color:"#7C3AED",borderRadius:20,padding:"2px 8px",fontSize:11,fontWeight:600}}>⏸ Pausa</span>
+                          :<span style={{background:"#D1FAE5",color:"#10B981",borderRadius:20,padding:"2px 8px",fontSize:11,fontWeight:600}}>✓ Ativo</span>}
+                        </td>
+                        <td style={{padding:"8px",fontSize:12,color:"#F59E0B",fontWeight:500,borderBottom:"1px solid #f3f4f6"}}>{c.note||"—"}</td>
+                        <td style={{padding:"8px 16px",textAlign:"center",borderBottom:"1px solid #f3f4f6"}}>
+                          <span style={{fontWeight:700,fontSize:14,color:todayCount>0?q.color:"#ccc"}}>{todayCount||"—"}</span>
+                        </td>
+                        <td style={{padding:"8px 16px",textAlign:"center",borderBottom:"1px solid #f3f4f6"}}>
+                          <span style={{fontWeight:600,fontSize:13,color:"#888"}}>{tot||"—"}</span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          );
+        })}
+      </>)}
       {tab==="Rodízio"&&<>
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(300px,1fr))",gap:16}}>{QUEUES.map(q=><QCard key={q.id} q={q}/>)}</div>
         <div style={{...C.card,marginTop:8,borderTop:"3px solid #7C3AED"}}>
