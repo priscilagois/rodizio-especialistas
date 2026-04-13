@@ -89,7 +89,8 @@ export default function App(){
   const [bkForm,setBkForm]=useState({room_id:"",specialist_name:"",booking_date:"",start_hour:"09",start_min:"00",end_hour:"10",end_min:"00"});
   const [bkNotes,setBkNotes]=useState("");
   const bkNotesRef=useRef("");
-  const notifRef=useRef(new Set());
+  const [cleanDate,setCleanDate]=useState("");
+
 
   const [authStep,setAuthStep]=useState("idle");
   const [tmpName,setTmpName]=useState("");
@@ -171,7 +172,17 @@ export default function App(){
   async function rotateNormal(qId){if(saving)return;setSaving(true);try{const res=await rpc("assign_next",{p_queue_id:qId,p_type:"normal",p_user:userName});if(res?.error)showToast("Nenhum disponível.","error");else{showToast(`Atribuído: ${res.specialist.name}`);const[sp,la]=await Promise.all([sb("specialists?order=name"),sb("last_assigned?select=*")]);if(sp?.length)setSpecs(sp);const lm={};(la||[]).forEach(r=>{lm[r.queue_id]={name:r.spec_name,type:r.type};});setLastMap(lm);const hi=await sb("history?order=created_at.desc&limit=1000");if(hi?.length)setHist(hi);}}catch{showToast("Erro.","error");}setSaving(false);}
   async function rotateSelecao(qId){const pool=selPool(qId);if(!pool.length){showToast("Nenhum com ⭐.","error");return;}if(saving)return;setSaving(true);try{const spec=pool[0];await sb(`specialists?id=eq.${spec.id}`,"PATCH",{ind:{...spec.ind,[qId]:(spec.ind?.[qId]||0)+1}});const res=await rpc("assign_next",{p_queue_id:qId,p_type:"selecao",p_user:userName});if(res?.error)showToast("Erro.","error");else{showToast(`Seleção: ${res.specialist.name}`);const sp=await sb("specialists?order=name");if(sp?.length)setSpecs(sp);}}catch{showToast("Erro.","error");}setSaving(false);}
   async function rotateRecart(qId){if(saving)return;setSaving(true);try{const res=await rpc("assign_recart",{p_queue_id:qId,p_user:userName});if(res?.error)showToast("Nenhum disponível.","error");else{showToast(`Recart. Férias: ${res.specialist.name}`);const sp=await sb("specialists?order=name");if(sp?.length)setSpecs(sp);}}catch{showToast("Erro.","error");}setSaving(false);}
-  async function addInd(qId,specId){const spec=specs.find(c=>c.id===specId);if(!spec)return;try{await sb(`specialists?id=eq.${specId}`,"PATCH",{ind:{...spec.ind,[qId]:(spec.ind?.[qId]||0)+1}});await sb("history","POST",{spec_name:spec.name,queue_id:qId,type:"indicacao",by_user:userName,date_key:today});showToast(`Indicação: ${spec.name}`);const sp=await sb("specialists?order=name");if(sp?.length)setSpecs(sp);}catch{showToast("Erro.","error");}}
+  async function addInd(qId,specId){
+    const spec=specs.find(c=>c.id===specId);if(!spec)return;
+    try{
+      const newInd={...spec.ind,[qId]:(spec.ind?.[qId]||0)+1};
+      await sb(`specialists?id=eq.${specId}`,"PATCH",{ind:newInd});
+      await sb("history","POST",{spec_name:spec.name,queue_id:qId,type:"indicacao",by_user:userName,date_key:today});
+      showToast(`Indicação: ${spec.name}`);
+      const sp=await sb("specialists?order=name");
+      if(sp?.length)setSpecs(sp);
+    }catch(e){console.error(e);showToast("Erro ao registrar indicação.","error");}
+  }
   async function addExtra(qId,specId){if(!adminOk)return;const spec=specs.find(c=>c.id===specId);if(!spec)return;try{await sb(`specialists?id=eq.${specId}`,"PATCH",{counts:{...spec.counts,[qId]:(spec.counts?.[qId]||0)+1}});await sb("history","POST",{spec_name:spec.name,queue_id:qId,type:"extra_admin",by_user:userName,date_key:today});showToast(`+1 extra: ${spec.name}`);const sp=await sb("specialists?order=name");if(sp?.length)setSpecs(sp);}catch{showToast("Erro.","error");}}
   async function toggleSel(spec){try{await sb(`specialists?id=eq.${spec.id}`,"PATCH",{selecao:!spec.selecao});const sp=await sb("specialists?order=name");if(sp?.length)setSpecs(sp);}catch{}}
   async function setVacation(spec,on,note=""){try{await sb(`specialists?id=eq.${spec.id}`,"PATCH",{status:on?"vacation":"active",note:on?note:spec.note});await sb("events","POST",{type:on?"pausa_inicio":"pausa_fim",spec_name:spec.name,detail:on?note:"Retornou de férias",by_user:userName,date_key:today});showToast(on?"Férias registradas!":"Retorno registrado!");const sp=await sb("specialists?order=name");if(sp?.length)setSpecs(sp);const ev=await sb("events?order=created_at.desc&limit=500");if(ev?.length)setEvts(ev);}catch{showToast("Erro.","error");}}
@@ -296,7 +307,7 @@ export default function App(){
           </div>}
         </div>
         <div style={{padding:"0.75rem 1rem",borderBottom:"1px solid #f3f4f6",display:"flex",gap:8,flexWrap:"wrap"}}>
-          <button style={{...C.btnP,flex:2,background:`linear-gradient(135deg,${q.color},${q.color}cc)`,opacity:saving?0.6:1}} onClick={()=>rotateNormal(qId)} disabled={saving}>{saving?"...":"🔄 Próximo"}</button>
+          <button style={{...C.btnP,flex:2,background:`linear-gradient(135deg,${q.color},${q.color}cc)`,opacity:saving?0.6:1}} onClick={()=>rotateNormal(qId)} disabled={saving}>{saving?"...":"▶️ Próximo"}</button>
           <button style={{...C.btnS,flex:1,opacity:spool.length>0?1:0.4,borderColor:spool.length>0?"#F59E0B":"#e5e7eb",color:spool.length>0?"#B45309":"#aaa"}} onClick={()=>rotateSelecao(qId)} disabled={!spool.length||saving}>⭐ Seleção</button>
           <button style={{...C.btnS,flex:"1 1 100%",borderColor:"#10B981",color:"#10B981",fontWeight:600,fontSize:12}} onClick={()=>rotateRecart(qId)}>🔁 Recart. Temporária</button>
         </div>
@@ -570,6 +581,24 @@ export default function App(){
             <button style={{padding:"8px 12px",borderRadius:8,border:"1px solid #FECACA",background:"#FEE2E2",color:"#EF4444",fontSize:12,fontWeight:600,cursor:"pointer",textAlign:"left"}} onClick={async()=>{if(!confirm("Limpar todas as reservas de salas?"))return;await sb("meeting_bookings","DELETE");setBookings([]);setAdminOpen(false);showToast("Reservas limpas!");}}>🗑️ Limpar reservas de salas</button>
             <button style={{padding:"8px 12px",borderRadius:8,border:"1px solid #FECACA",background:"#FEE2E2",color:"#EF4444",fontSize:12,fontWeight:600,cursor:"pointer",textAlign:"left"}} onClick={async()=>{if(!confirm("Limpar todo o calendário de presença?"))return;await sb("presence_calendar","DELETE");setPresence([]);setAdminOpen(false);showToast("Presença limpa!");}}>🗑️ Limpar calendário de presença</button>
             <button style={{padding:"8px 12px",borderRadius:8,border:"1px solid #FECACA",background:"#FEE2E2",color:"#EF4444",fontSize:12,fontWeight:600,cursor:"pointer",textAlign:"left"}} onClick={async()=>{if(!confirm("Limpar fechamentos de dia?"))return;await sb("day_closings","DELETE");setDayLog([]);setAdminOpen(false);showToast("Fechamentos limpos!");}}>🗑️ Limpar fechamentos de dia</button>
+            <div style={{background:"#f9fafb",borderRadius:8,padding:"10px",border:"1px solid #e5e7eb"}}>
+              <div style={{fontSize:12,fontWeight:600,color:"#555",marginBottom:6}}>🗑️ Apagar carteirizações de um dia específico</div>
+              <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+                <input type="date" style={{...C.inp,maxWidth:160,padding:"6px 10px"}} value={cleanDate} onChange={e=>setCleanDate(e.target.value)}/>
+                {cleanDate&&<div style={{fontSize:11,color:"#888"}}>📅 {toBR(cleanDate)}</div>}
+                <button style={{padding:"6px 12px",borderRadius:8,border:"1px solid #FECACA",background:"#FEE2E2",color:"#EF4444",fontSize:12,fontWeight:600,cursor:"pointer"}} onClick={async()=>{
+                  if(!cleanDate){showToast("Selecione uma data","error");return;}
+                  const dk=toBR(cleanDate);
+                  if(!confirm(`Apagar todos os registros de ${dk}?`))return;
+                  await sb(`history?date_key=eq.${dk}`,"DELETE");
+                  const hi=await sb("history?order=created_at.desc&limit=1000");
+                  if(hi)setHist(hi);
+                  setCleanDate("");
+                  setAdminOpen(false);
+                  showToast(`Registros de ${dk} apagados!`);
+                }}>Apagar dia</button>
+              </div>
+            </div>
             <button style={{padding:"8px 12px",borderRadius:8,border:"2px solid #EF4444",background:"#FEE2E2",color:"#EF4444",fontSize:12,fontWeight:700,cursor:"pointer",textAlign:"left"}} onClick={async()=>{if(!confirm("⚠️ ATENÇÃO: Isso vai apagar TODOS os dados. Tem certeza?"))return;await Promise.all([sb("history","DELETE"),sb("events","DELETE"),sb("meeting_bookings","DELETE"),sb("presence_calendar","DELETE"),sb("day_closings","DELETE"),sb("last_assigned","DELETE")]);for(const s of specs)await sb(`specialists?id=eq.${s.id}`,"PATCH",{counts:{},ind:{}});setHist([]);setEvts([]);setBookings([]);setPresence([]);setDayLog([]);setLastMap({});const sp=await sb("specialists?order=name");if(sp?.length)setSpecs(sp);setAdminOpen(false);showToast("Todos os dados foram apagados!");}}>⚠️ Apagar TUDO (reset completo)</button>
           </div>
         </div>
@@ -588,7 +617,7 @@ export default function App(){
           <div style={{fontWeight:700,fontSize:13,marginBottom:12,color:"#7C3AED"}}>📖 Legenda</div>
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))",gap:8}}>
             {[
-              {icon:"🔄",label:"Próximo",desc:"Avança o rodízio normal"},
+              {icon:"▶️",label:"Próximo",desc:"Avança o rodízio normal"},
               {icon:"⭐",label:"Seleção",desc:"Marca para atendimentos especiais"},
               {icon:"🌴",label:"Férias",desc:"Coloca/retira de férias"},
               {icon:"⏸",label:"Pausa",desc:"Pausa/reativa por outro motivo"},
