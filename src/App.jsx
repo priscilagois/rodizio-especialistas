@@ -672,7 +672,13 @@ export default function App(){
                         <td style={{padding:"8px",textAlign:"center"}}><span style={{fontWeight:700,fontSize:14,color:nRT>0?"#10B981":"#ddd"}}>{nRT||"—"}</span></td>
                         <td style={{padding:"8px",textAlign:"center"}}><span style={{fontWeight:700,fontSize:14,color:nAvulso>0?"#4F46E5":"#ddd"}}>{nAvulso||"—"}</span></td>
                         <td style={{padding:"8px 16px",textAlign:"center"}}><span style={{fontWeight:800,fontSize:15,color:total>0?"#222":"#ddd"}}>{total||"—"}</span></td>
-                        <td style={{padding:"8px 16px",fontSize:12,color:off?"#cc0000":"#F59E0B",fontWeight:500}}>{c.note||""}</td>
+                        <td style={{padding:"8px 16px",fontSize:12,color:off?"#cc0000":"#F59E0B",fontWeight:500}}>
+                          <div style={{display:"flex",alignItems:"center",gap:6}}>
+                            <span style={{flex:1}}>{c.note||""}</span>
+                            {c.note&&<button style={{background:"none",border:"none",cursor:"pointer",fontSize:12,color:"#aaa",padding:"0 2px"}} title="Limpar nota" onClick={()=>saveNote(c,"")}>✕</button>}
+                            <button style={{background:"none",border:"none",cursor:"pointer",fontSize:12,color:"#aaa",padding:"0 2px"}} title="Editar nota" onClick={()=>{setMTxt(c.note||"");setModal({type:"nota",spec:c});}}>✏️</button>
+                          </div>
+                        </td>
                       </tr>
                     );
                   })}
