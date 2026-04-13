@@ -85,7 +85,6 @@ export default function App(){
   const [ctrlM,setCtrlM]=useState({y:new Date().getFullYear(),m:new Date().getMonth()});
   const [ctrlQ,setCtrlQ]=useState("USA");
   const [presM,setPresM]=useState({y:new Date().getFullYear(),m:new Date().getMonth()});
-  // bkForm sem notes para evitar perda de foco
   const [bkForm,setBkForm]=useState({room_id:"",specialist_name:"",booking_date:"",start_hour:"09",start_min:"00",end_hour:"10",end_min:"00"});
   const [bkNotes,setBkNotes]=useState("");
   const bkNotesRef=useRef("");
@@ -95,7 +94,6 @@ export default function App(){
   const [novoDiaModal,setNovoDiaModal]=useState(false);
   const [novoDiaDate,setNovoDiaDate]=useState("");
   const notifRef=useRef(new Set());
-
 
   const [authStep,setAuthStep]=useState("idle");
   const [tmpName,setTmpName]=useState("");
@@ -146,7 +144,7 @@ export default function App(){
   const todayISOStr=todayISO();
 
   function totalOf(c,qId){
-    return(c.counts?.[qId]||0)+(c.ind?.[qId]||0);
+    return hist.filter(h=>h.spec_name===c.name&&h.queue_id===qId&&h.date_key===today).length;
   }
   function prevTotal(name,qId){return prevCounts[qId]?.[name]||0;}
   function orderScore(c,qId){
@@ -201,7 +199,18 @@ export default function App(){
       const hi=await sb("history?order=created_at.desc&limit=1000");
       if(hi?.length)setHist(hi);
     }catch(e){console.error(e);showToast("Erro ao registrar.","error");}
-  }if(!adminOk)return;const spec=specs.find(c=>c.id===specId);if(!spec)return;try{await sb(`specialists?id=eq.${specId}`,"PATCH",{counts:{...spec.counts,[qId]:(spec.counts?.[qId]||0)+1}});await sb("history","POST",{spec_name:spec.name,queue_id:qId,type:"extra_admin",by_user:userName,date_key:today});showToast(`+1 extra: ${spec.name}`);const sp=await sb("specialists?order=name");if(sp?.length)setSpecs(sp);}catch{showToast("Erro.","error");}}
+  }
+  async function addExtraAdmin(qId,specId){
+    if(!adminOk)return;
+    const spec=specs.find(c=>c.id===specId);if(!spec)return;
+    try{
+      await sb(`specialists?id=eq.${specId}`,"PATCH",{counts:{...spec.counts,[qId]:(spec.counts?.[qId]||0)+1}});
+      await sb("history","POST",{spec_name:spec.name,queue_id:qId,type:"extra_admin",by_user:userName,date_key:today});
+      showToast(`+1 extra: ${spec.name}`);
+      const sp=await sb("specialists?order=name");
+      if(sp?.length)setSpecs(sp);
+    }catch{showToast("Erro.","error");}
+  }
   async function toggleSel(spec){try{await sb(`specialists?id=eq.${spec.id}`,"PATCH",{selecao:!spec.selecao});const sp=await sb("specialists?order=name");if(sp?.length)setSpecs(sp);}catch{}}
   async function setVacation(spec,on,note=""){try{await sb(`specialists?id=eq.${spec.id}`,"PATCH",{status:on?"vacation":"active",note:on?note:spec.note});await sb("events","POST",{type:on?"pausa_inicio":"pausa_fim",spec_name:spec.name,detail:on?note:"Retornou de férias",by_user:userName,date_key:today});showToast(on?"Férias registradas!":"Retorno registrado!");const sp=await sb("specialists?order=name");if(sp?.length)setSpecs(sp);const ev=await sb("events?order=created_at.desc&limit=500");if(ev?.length)setEvts(ev);}catch{showToast("Erro.","error");}}
   async function setPaused(spec,on,note=""){try{await sb(`specialists?id=eq.${spec.id}`,"PATCH",{status:on?"paused":"active",note:on?note:spec.note});await sb("events","POST",{type:on?"pausa_inicio":"pausa_fim",spec_name:spec.name,detail:on?note:"Reativado",by_user:userName,date_key:today});showToast(on?"Pausado!":"Reativado!");const sp=await sb("specialists?order=name");if(sp?.length)setSpecs(sp);}catch{showToast("Erro.","error");}}
@@ -235,16 +244,7 @@ export default function App(){
     const conflict=bookings.find(b=>String(b.room_id)===String(bkForm.room_id)&&b.booking_date===bkForm.booking_date&&!(end_time<=b.start_time||start_time>=b.end_time));
     if(conflict){showToast(`Conflito: ${conflict.specialist_name} (${conflict.start_time}–${conflict.end_time}).`,"error");return;}
     try{
-      const payload={
-        room_id:parseInt(bkForm.room_id),
-        room_name:room?.name||"",
-        specialist_name:bkForm.specialist_name,
-        booking_date:bkForm.booking_date,
-        start_time,
-        end_time,
-        notes:bkNotes,
-        booked_by:userName
-      };
+      const payload={room_id:parseInt(bkForm.room_id),room_name:room?.name||"",specialist_name:bkForm.specialist_name,booking_date:bkForm.booking_date,start_time,end_time,notes:bkNotes,booked_by:userName};
       await sb("meeting_bookings","POST",payload);
       showToast("Reserva criada!");
       setBkForm({room_id:"",specialist_name:"",booking_date:"",start_hour:"09",start_min:"00",end_hour:"10",end_min:"00"});
@@ -335,7 +335,6 @@ export default function App(){
             const credits=c.ind?.[qId]||0,tot=totalOf(c,qId),prev=prevTotal(c.name,qId);
             return(
               <div key={c.id} style={{padding:"8px 6px",borderBottom:i<allInQ.length-1?"1px solid #f3f4f6":"none",opacity:off?0.45:1}}>
-                {/* Linha 1: avatar + nome + status + contador */}
                 <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:5}}>
                   <div style={{width:28,height:28,borderRadius:"50%",background:off?"#e5e7eb":q.light,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,color:off?"#999":q.color,flexShrink:0}}>{initials(c.name)}</div>
                   <div style={{flex:1}}>
@@ -350,7 +349,6 @@ export default function App(){
                   </div>
                   <span style={{padding:"2px 10px",borderRadius:20,fontSize:12,fontWeight:800,background:q.light,color:q.color,flexShrink:0}}>{tot}</span>
                 </div>
-                {/* Linha 2: ações */}
                 <div style={{display:"flex",gap:4,alignItems:"center",paddingLeft:36,flexWrap:"wrap"}}>
                   <button style={{padding:"3px 9px",borderRadius:8,border:"none",background:c.selecao?"#FEF3C7":"#f3f4f6",cursor:"pointer",fontSize:11,fontWeight:600,color:c.selecao?"#B45309":"#888"}} onClick={()=>toggleSel(c)}>⭐ Seleção</button>
                   <button style={{padding:"3px 9px",borderRadius:8,border:"none",background:isVac?"#D1FAE5":"#f3f4f6",cursor:"pointer",fontSize:11,fontWeight:600,color:isVac?"#059669":"#888"}} onClick={()=>{if(!isVac){setMTxt("");setModal({type:"vacation",spec:c});}else setVacation(c,false);}}>🌴 Férias</button>
@@ -416,7 +414,7 @@ export default function App(){
             </thead>
             <tbody>
               {inQ.map((c,ri)=>{const rb=ri%2===0?"#fff":"#fafafa",tN=cntM(c.name,"normal"),tI=cntM(c.name,"indicacao")+cntM(c.name,"selecao");return(<tr key={c.id}><td style={{...td,textAlign:"left",fontWeight:600,background:rb,position:"sticky",left:0,zIndex:1}}><div style={{display:"flex",alignItems:"center",gap:6}}><div style={{width:20,height:20,borderRadius:"50%",background:qInfo.light,display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,fontWeight:700,color:qInfo.color}}>{initials(c.name)}</div>{c.name}</div></td>{wd.map(d=>{const dk=d.toLocaleDateString("pt-BR"),n=cnt(c.name,dk,"normal"),ii=cnt(c.name,dk,"indicacao")+cnt(c.name,dk,"selecao");return[<td key={dk+"n"} style={{...td,background:n>0?"#EDE9FE":rb,color:n>0?"#7C3AED":"#ddd",fontWeight:n>0?600:400}}>{n||""}</td>,<td key={dk+"i"} style={{...td,background:ii>0?"#FEF3C7":rb,color:ii>0?"#B45309":"#ddd",fontWeight:ii>0?600:400}}>{ii||""}</td>];})}<td style={{...td,fontWeight:700,background:qInfo.light,color:qInfo.color}}>{tN||""}</td><td style={{...td,fontWeight:700,background:"#FEF3C7",color:"#B45309"}}>{tI||""}</td></tr>);})}
-                <tr style={{borderTop:`2px solid ${qInfo.color}40`}}><td style={{...td,textAlign:"left",fontWeight:700,background:"#f9fafb",position:"sticky",left:0,zIndex:2,boxShadow:"3px 0 6px rgba(0,0,0,0.08)",minWidth:130}}>TOTAL</td>{wd.map(d=>{const dk=d.toLocaleDateString("pt-BR"),n=inQ.reduce((a,c)=>a+cnt(c.name,dk,"normal"),0),ii=inQ.reduce((a,c)=>a+cnt(c.name,dk,"indicacao")+cnt(c.name,dk,"selecao"),0),rt=inQ.reduce((a,c)=>a+cntRT(c.name,dk),0);return[<td key={dk+"tn"} style={{...tdDayFirst,fontWeight:600,background:n>0?qInfo.light:"#f9fafb",color:qInfo.color}}>{n||""}</td>,<td key={dk+"ti"} style={{...td,fontWeight:600,background:ii>0?"#FEF3C7":"#f9fafb",color:"#B45309"}}>{ii||""}</td>,<td key={dk+"trt"} style={{...td,fontWeight:600,background:rt>0?"#D1FAE5":"#f9fafb",color:"#10B981"}}>{rt||""}</td>];})}<td style={{...tdDayFirst,fontWeight:700,background:qInfo.light,color:qInfo.color}}>{inQ.reduce((a,c)=>a+cntM(c.name,"normal"),0)||""}</td><td style={{...td,fontWeight:700,background:"#FEF3C7",color:"#B45309"}}>{inQ.reduce((a,c)=>a+cntM(c.name,"indicacao")+cntM(c.name,"selecao"),0)||""}</td><td style={{...td,fontWeight:700,background:"#D1FAE5",color:"#10B981"}}>{inQ.reduce((a,c)=>a+cntMRT(c.name),0)||""}</td></tr>
+              <tr style={{borderTop:`2px solid ${qInfo.color}40`}}><td style={{...td,textAlign:"left",fontWeight:700,background:"#f9fafb",position:"sticky",left:0,zIndex:2,boxShadow:"3px 0 6px rgba(0,0,0,0.08)",minWidth:130}}>TOTAL</td>{wd.map(d=>{const dk=d.toLocaleDateString("pt-BR"),n=inQ.reduce((a,c)=>a+cnt(c.name,dk,"normal"),0),ii=inQ.reduce((a,c)=>a+cnt(c.name,dk,"indicacao")+cnt(c.name,dk,"selecao"),0),rt=inQ.reduce((a,c)=>a+cntRT(c.name,dk),0);return[<td key={dk+"tn"} style={{...tdDayFirst,fontWeight:600,background:n>0?qInfo.light:"#f9fafb",color:qInfo.color}}>{n||""}</td>,<td key={dk+"ti"} style={{...td,fontWeight:600,background:ii>0?"#FEF3C7":"#f9fafb",color:"#B45309"}}>{ii||""}</td>,<td key={dk+"trt"} style={{...td,fontWeight:600,background:rt>0?"#D1FAE5":"#f9fafb",color:"#10B981"}}>{rt||""}</td>];})}<td style={{...tdDayFirst,fontWeight:700,background:qInfo.light,color:qInfo.color}}>{inQ.reduce((a,c)=>a+cntM(c.name,"normal"),0)||""}</td><td style={{...td,fontWeight:700,background:"#FEF3C7",color:"#B45309"}}>{inQ.reduce((a,c)=>a+cntM(c.name,"indicacao")+cntM(c.name,"selecao"),0)||""}</td><td style={{...td,fontWeight:700,background:"#D1FAE5",color:"#10B981"}}>{inQ.reduce((a,c)=>a+cntMRT(c.name),0)||""}</td></tr>
             </tbody>
           </table>
         </div>
@@ -451,21 +449,13 @@ export default function App(){
             <div>
               <div style={{fontSize:12,fontWeight:600,color:"#555",marginBottom:4}}>Horário</div>
               <div style={{display:"grid",gridTemplateColumns:"1fr auto 1fr auto 1fr auto 1fr",gap:4,alignItems:"center"}}>
-                <select style={{...C.inp,padding:"10px 6px"}} value={bkForm.start_hour} onChange={e=>setBkForm(p=>({...p,start_hour:e.target.value}))}>
-                  {hours.map(h=><option key={h} value={h}>{h}</option>)}
-                </select>
+                <select style={{...C.inp,padding:"10px 6px"}} value={bkForm.start_hour} onChange={e=>setBkForm(p=>({...p,start_hour:e.target.value}))}>{hours.map(h=><option key={h} value={h}>{h}</option>)}</select>
                 <span style={{textAlign:"center",fontWeight:700}}>:</span>
-                <select style={{...C.inp,padding:"10px 6px"}} value={bkForm.start_min} onChange={e=>setBkForm(p=>({...p,start_min:e.target.value}))}>
-                  {mins.map(m=><option key={m} value={m}>{m}</option>)}
-                </select>
+                <select style={{...C.inp,padding:"10px 6px"}} value={bkForm.start_min} onChange={e=>setBkForm(p=>({...p,start_min:e.target.value}))}>{mins.map(m=><option key={m} value={m}>{m}</option>)}</select>
                 <span style={{textAlign:"center",color:"#888",fontSize:12,padding:"0 2px"}}>até</span>
-                <select style={{...C.inp,padding:"10px 6px"}} value={bkForm.end_hour} onChange={e=>setBkForm(p=>({...p,end_hour:e.target.value}))}>
-                  {hours.map(h=><option key={h} value={h}>{h}</option>)}
-                </select>
+                <select style={{...C.inp,padding:"10px 6px"}} value={bkForm.end_hour} onChange={e=>setBkForm(p=>({...p,end_hour:e.target.value}))}>{hours.map(h=><option key={h} value={h}>{h}</option>)}</select>
                 <span style={{textAlign:"center",fontWeight:700}}>:</span>
-                <select style={{...C.inp,padding:"10px 6px"}} value={bkForm.end_min} onChange={e=>setBkForm(p=>({...p,end_min:e.target.value}))}>
-                  {mins.map(m=><option key={m} value={m}>{m}</option>)}
-                </select>
+                <select style={{...C.inp,padding:"10px 6px"}} value={bkForm.end_min} onChange={e=>setBkForm(p=>({...p,end_min:e.target.value}))}>{mins.map(m=><option key={m} value={m}>{m}</option>)}</select>
               </div>
             </div>
           </div>
@@ -509,7 +499,7 @@ export default function App(){
           {!bookings.filter(b=>b.booking_date<todayISOStr).length&&<div style={{fontSize:13,color:"#888",textAlign:"center",padding:"1rem"}}>Nenhum histórico.</div>}
           {bookings.filter(b=>b.booking_date<todayISOStr).sort((a,b)=>b.booking_date.localeCompare(a.booking_date)||b.start_time.localeCompare(a.start_time)).map((b,i,arr)=>{
             const ri=rooms.findIndex(r=>String(r.id)===String(b.room_id)),col=RCOLS[ri>=0?ri%RCOLS.length:0];
-            return(              <div key={b.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderBottom:i<arr.length-1?"1px solid #f3f4f6":"none",opacity:0.7}}>
+            return(<div key={b.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderBottom:i<arr.length-1?"1px solid #f3f4f6":"none",opacity:0.7}}>
               <div style={{width:8,height:8,borderRadius:"50%",background:col,flexShrink:0}}/>
               <div style={{flex:1}}><span style={{fontWeight:600,fontSize:13}}>{b.specialist_name}</span><span style={{fontSize:12,color:"#888",marginLeft:8}}>{b.room_name} · {toBR(b.booking_date)} · {b.start_time}–{b.end_time}</span>{b.notes&&<span style={{fontSize:11,color:"#aaa",marginLeft:8}}>· {b.notes}</span>}</div>
               {adminOk&&<button style={{background:"#FEE2E2",border:"none",borderRadius:8,padding:"4px 8px",cursor:"pointer",fontSize:12,color:"#EF4444"}} onClick={()=>deleteBooking(b.id)}>✕</button>}
@@ -606,17 +596,7 @@ export default function App(){
               <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
                 <input type="date" style={{...C.inp,maxWidth:160,padding:"6px 10px"}} value={cleanDate} onChange={e=>setCleanDate(e.target.value)}/>
                 {cleanDate&&<div style={{fontSize:11,color:"#888"}}>📅 {toBR(cleanDate)}</div>}
-                <button style={{padding:"6px 12px",borderRadius:8,border:"1px solid #FECACA",background:"#FEE2E2",color:"#EF4444",fontSize:12,fontWeight:600,cursor:"pointer"}} onClick={async()=>{
-                  if(!cleanDate){showToast("Selecione uma data","error");return;}
-                  const dk=toBR(cleanDate);
-                  if(!confirm(`Apagar todos os registros de ${dk}?`))return;
-                  await sb(`history?date_key=eq.${dk}`,"DELETE");
-                  const hi=await sb("history?order=created_at.desc&limit=1000");
-                  if(hi)setHist(hi);
-                  setCleanDate("");
-                  setAdminOpen(false);
-                  showToast(`Registros de ${dk} apagados!`);
-                }}>Apagar dia</button>
+                <button style={{padding:"6px 12px",borderRadius:8,border:"1px solid #FECACA",background:"#FEE2E2",color:"#EF4444",fontSize:12,fontWeight:600,cursor:"pointer"}} onClick={async()=>{if(!cleanDate){showToast("Selecione uma data","error");return;}const dk=toBR(cleanDate);if(!confirm(`Apagar todos os registros de ${dk}?`))return;await sb(`history?date_key=eq.${dk}`,"DELETE");const hi=await sb("history?order=created_at.desc&limit=1000");if(hi)setHist(hi);setCleanDate("");setAdminOpen(false);showToast(`Registros de ${dk} apagados!`);}}>Apagar dia</button>
               </div>
             </div>
             <button style={{padding:"8px 12px",borderRadius:8,border:"2px solid #EF4444",background:"#FEE2E2",color:"#EF4444",fontSize:12,fontWeight:700,cursor:"pointer",textAlign:"left"}} onClick={async()=>{if(!confirm("⚠️ ATENÇÃO: Isso vai apagar TODOS os dados. Tem certeza?"))return;await Promise.all([sb("history?id=gt.0","DELETE"),sb("events?id=gt.0","DELETE"),sb("meeting_bookings?id=gt.0","DELETE"),sb("presence_calendar?id=gt.0","DELETE"),sb("day_closings?id=gt.0","DELETE"),sb("last_assigned?queue_id=neq.","DELETE")]);for(const s of specs)await sb(`specialists?id=eq.${s.id}`,"PATCH",{counts:{},ind:{}});setHist([]);setEvts([]);setBookings([]);setPresence([]);setDayLog([]);setLastMap({});const sp=await sb("specialists?order=name");if(sp?.length)setSpecs(sp);setAdminOpen(false);showToast("Todos os dados foram apagados!");}}>⚠️ Apagar TUDO (reset completo)</button>
@@ -630,14 +610,13 @@ export default function App(){
             <button style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"#aaa"}} onClick={()=>{setAvulsoModal(null);setAvulsoTxt("");}}>×</button>
           </div>
           <div style={{fontSize:13,color:"#555",marginBottom:8}}>Informe o motivo (ex: cliente presencial, retorno, indicação gerencial)</div>
-          <input style={C.inp} placeholder="Motivo obrigatório" value={avulsoTxt} onChange={e=>setAvulsoTxt(e.target.value)} autoFocus onKeyDown={e=>{if(e.key==="Enter"&&avulsoTxt.trim()){addManual(avulsoModal.qId,avulsoModal.spec.id,avulsoTxt);setAvulsoModal(null);setAvulsoTxt("");}}}/>
+          <input style={C.inp} placeholder="Motivo obrigatório" value={avulsoTxt} onChange={e=>setAvulsoTxt(e.target.value)} autoFocus onKeyDown={e=>{if(e.key==="Enter"&&avulsoTxt.trim()){addManual(avulsoModal.qId,avulsoModal.spec.id);setAvulsoModal(null);setAvulsoTxt("");}}}/>
           <div style={{display:"flex",gap:8,marginTop:12}}>
-            <button style={{...C.btnP,background:"#10B981"}} onClick={()=>{if(!avulsoTxt.trim()){showToast("Informe o motivo","error");return;}addManual(avulsoModal.qId,avulsoModal.spec.id,avulsoTxt);setAvulsoModal(null);setAvulsoTxt("");}}>Confirmar</button>
+            <button style={{...C.btnP,background:"#10B981"}} onClick={()=>{if(!avulsoTxt.trim()){showToast("Informe o motivo","error");return;}addManual(avulsoModal.qId,avulsoModal.spec.id);setAvulsoModal(null);setAvulsoTxt("");}}>Confirmar</button>
             <button style={C.btnS} onClick={()=>{setAvulsoModal(null);setAvulsoTxt("");}}>Cancelar</button>
           </div>
         </div>
       )}
-
       {modal&&(
         <div style={{background:"#fff",borderRadius:16,padding:"1.5rem",border:"1px solid #e5e7eb",marginBottom:16,boxShadow:"0 4px 24px #7C3AED20"}}>
           {modal?.type==="nota"&&(<><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}><span style={{fontWeight:700,fontSize:15}}>📝 Nota — {modal.spec.name}</span><button style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"#aaa"}} onClick={()=>setModal(null)}>×</button></div><textarea rows={3} style={{...C.inp,resize:"none",fontFamily:f}} value={mTxt} onChange={e=>setMTxt(e.target.value)} autoFocus/><div style={{display:"flex",gap:8,marginTop:12}}><button style={C.btnP} onClick={()=>{saveNote(modal.spec,mTxt);setModal(null);}}>Salvar</button><button style={C.btnS} onClick={()=>setModal(null)}>Cancelar</button></div></>)}
@@ -653,19 +632,13 @@ export default function App(){
           const totalSetor=inQ.reduce((acc,c)=>acc+hist.filter(h=>h.spec_name===c.name&&h.queue_id===q.id&&h.date_key===today).length,0);
           return(
             <div key={q.id} style={{...C.card,padding:0,overflow:"hidden",marginBottom:14}}>
-              {/* Cabeçalho do setor */}
               <div style={{padding:"8px 16px",background:q.color,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-                <div style={{display:"flex",alignItems:"center",gap:8}}>
-                  <span style={{fontSize:18}}>{q.icon}</span>
-                  <span style={{fontWeight:700,fontSize:14,color:"#fff"}}>{q.label}</span>
-                  <span style={{fontSize:11,color:"#ffffff99",fontWeight:500}}>{inQ.filter(c=>c.status==="active").length} ativos</span>
-                </div>
+                <div style={{display:"flex",alignItems:"center",gap:8}}><span style={{fontSize:18}}>{q.icon}</span><span style={{fontWeight:700,fontSize:14,color:"#fff"}}>{q.label}</span><span style={{fontSize:11,color:"#ffffff99",fontWeight:500}}>{inQ.filter(c=>c.status==="active").length} ativos</span></div>
                 <div style={{display:"flex",gap:12,alignItems:"center"}}>
                   {firstToday&&<span style={{fontSize:11,color:"#ffffffcc"}}>🏁 Iniciou: <strong style={{color:"#fff"}}>{firstToday.spec_name}</strong></span>}
                   <span style={{fontSize:11,color:"#fff",background:"rgba(255,255,255,0.2)",borderRadius:20,padding:"2px 10px",fontWeight:700}}>Total hoje: {totalSetor}</span>
                 </div>
               </div>
-              {/* Tabela */}
               <table style={{width:"100%",borderCollapse:"collapse"}}>
                 <thead>
                   <tr style={{background:"#f9fafb",borderBottom:"2px solid #e5e7eb"}}>
@@ -691,27 +664,13 @@ export default function App(){
                     const textColor=off?"#cc0000":"#222";
                     return(
                       <tr key={c.id} style={{background:rowBg,borderBottom:"1px solid #f3f4f6"}}>
-                        <td style={{padding:"8px 16px"}}>
-                          <div style={{display:"flex",alignItems:"center",gap:8}}>
-                            <div style={{width:24,height:24,borderRadius:"50%",background:off?"#fecaca":q.light,display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,fontWeight:700,color:off?"#cc0000":q.color,flexShrink:0}}>{initials(c.name)}</div>
-                            <span style={{fontWeight:600,fontSize:13,color:textColor}}>{c.name}</span>
-                            {c.selecao&&!off&&<span style={{fontSize:11}}>⭐</span>}
-                            {isVac&&<span style={{fontSize:10,background:"#fecaca",color:"#cc0000",borderRadius:20,padding:"1px 7px",fontWeight:600}}>🌴 Férias</span>}
-                            {isPaused&&<span style={{fontSize:10,background:"#fecaca",color:"#cc0000",borderRadius:20,padding:"1px 7px",fontWeight:600}}>⏸ Pausa</span>}
-                          </div>
-                        </td>
+                        <td style={{padding:"8px 16px"}}><div style={{display:"flex",alignItems:"center",gap:8}}><div style={{width:24,height:24,borderRadius:"50%",background:off?"#fecaca":q.light,display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,fontWeight:700,color:off?"#cc0000":q.color,flexShrink:0}}>{initials(c.name)}</div><span style={{fontWeight:600,fontSize:13,color:textColor}}>{c.name}</span>{c.selecao&&!off&&<span style={{fontSize:11}}>⭐</span>}{isVac&&<span style={{fontSize:10,background:"#fecaca",color:"#cc0000",borderRadius:20,padding:"1px 7px",fontWeight:600}}>🌴 Férias</span>}{isPaused&&<span style={{fontSize:10,background:"#fecaca",color:"#cc0000",borderRadius:20,padding:"1px 7px",fontWeight:600}}>⏸ Pausa</span>}</div></td>
                         <td style={{padding:"8px",textAlign:"center"}}><span style={{fontWeight:700,fontSize:14,color:nNormal>0?"#7C3AED":"#ddd"}}>{nNormal||"—"}</span></td>
                         <td style={{padding:"8px",textAlign:"center"}}><span style={{fontWeight:700,fontSize:14,color:nInd>0?"#F59E0B":"#ddd"}}>{nInd||"—"}</span></td>
                         <td style={{padding:"8px",textAlign:"center"}}><span style={{fontWeight:700,fontSize:14,color:nRT>0?"#10B981":"#ddd"}}>{nRT||"—"}</span></td>
                         <td style={{padding:"8px",textAlign:"center"}}><span style={{fontWeight:700,fontSize:14,color:nAvulso>0?"#4F46E5":"#ddd"}}>{nAvulso||"—"}</span></td>
                         <td style={{padding:"8px 16px",textAlign:"center"}}><span style={{fontWeight:800,fontSize:15,color:total>0?"#222":"#ddd"}}>{total||"—"}</span></td>
-                        <td style={{padding:"8px 16px",fontSize:12,color:off?"#cc0000":"#F59E0B",fontWeight:500}}>
-                          <div style={{display:"flex",alignItems:"center",gap:6}}>
-                            <span style={{flex:1}}>{c.note||""}</span>
-                            {c.note&&<button style={{background:"none",border:"none",cursor:"pointer",fontSize:12,color:"#aaa",padding:"0 2px"}} title="Limpar nota" onClick={()=>saveNote(c,"")}>✕</button>}
-                            <button style={{background:"none",border:"none",cursor:"pointer",fontSize:12,color:"#aaa",padding:"0 2px"}} title="Editar nota" onClick={()=>{setMTxt(c.note||"");setModal({type:"nota",spec:c});}}>✏️</button>
-                          </div>
-                        </td>
+                        <td style={{padding:"8px 16px",fontSize:12,color:off?"#cc0000":"#F59E0B",fontWeight:500}}><div style={{display:"flex",alignItems:"center",gap:6}}><span style={{flex:1}}>{c.note||""}</span>{c.note&&<button style={{background:"none",border:"none",cursor:"pointer",fontSize:12,color:"#aaa",padding:"0 2px"}} title="Limpar nota" onClick={()=>saveNote(c,"")}>✕</button>}<button style={{background:"none",border:"none",cursor:"pointer",fontSize:12,color:"#aaa",padding:"0 2px"}} title="Editar nota" onClick={()=>{setMTxt(c.note||"");setModal({type:"nota",spec:c});}}>✏️</button></div></td>
                       </tr>
                     );
                   })}
@@ -720,7 +679,6 @@ export default function App(){
             </div>
           );
         })}
-        {/* Cards de resumo no final */}
         <div style={{display:"flex",gap:16,marginTop:4,flexWrap:"wrap"}}>
           <div style={{flex:1,minWidth:200}}>
             <div style={{fontSize:11,fontWeight:700,color:"#888",marginBottom:6,textTransform:"uppercase",letterSpacing:1}}>Especialistas</div>
@@ -741,23 +699,7 @@ export default function App(){
         <div style={{...C.card,marginTop:8,borderTop:"3px solid #7C3AED"}}>
           <div style={{fontWeight:700,fontSize:13,marginBottom:12,color:"#7C3AED"}}>📖 Legenda</div>
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))",gap:8}}>
-            {[
-              {icon:"▶️",label:"Próximo",desc:"Avança o rodízio normal"},
-              {icon:"⭐",label:"Seleção",desc:"Marca para atendimentos especiais"},
-              {icon:"🌴",label:"Férias",desc:"Coloca/retira de férias"},
-              {icon:"⏸",label:"Pausa",desc:"Pausa/reativa por outro motivo"},
-              {icon:"📝",label:"Nota",desc:"Adiciona anotação interna"},
-              {icon:"📌",label:"Indicação",desc:"Créditos de indicação direta"},
-              {icon:"🔁",label:"Recart. Temporária",desc:"Recarteirização durante ausência do titular (férias, licença, etc.)"},
-              {icon:"+1",label:"Avulso",desc:"Carteirização direta por outro motivo (telefonema, presencial, etc.)"},
-              {icon:"🆕",label:"Novos hoje",desc:"Total de clientes novos hoje neste setor"},
-              {icon:"✅",label:"Último",desc:"Último especialista atendido neste setor"},
-            ].map(it=>(
-              <div key={it.icon} style={{display:"flex",alignItems:"flex-start",gap:8,padding:"8px",background:"#f9fafb",borderRadius:10}}>
-                <span style={{fontSize:16,flexShrink:0,minWidth:24,textAlign:"center"}}>{it.icon}</span>
-                <div><div style={{fontWeight:600,fontSize:12}}>{it.label}</div><div style={{fontSize:11,color:"#888"}}>{it.desc}</div></div>
-              </div>
-            ))}
+            {[{icon:"▶️",label:"Próximo",desc:"Avança o rodízio normal"},{icon:"⭐",label:"Seleção",desc:"Marca para atendimentos especiais"},{icon:"🌴",label:"Férias",desc:"Coloca/retira de férias"},{icon:"⏸",label:"Pausa",desc:"Pausa/reativa por outro motivo"},{icon:"📝",label:"Nota",desc:"Adiciona anotação interna"},{icon:"📌",label:"Indicação",desc:"Créditos de indicação direta"},{icon:"🔁",label:"Recart. Temporária",desc:"Recarteirização durante ausência do titular (férias, licença, etc.)"},{icon:"+1",label:"Avulso",desc:"Carteirização direta por outro motivo (telefonema, presencial, etc.)"},{icon:"🆕",label:"Novos hoje",desc:"Total de clientes novos hoje neste setor"},{icon:"✅",label:"Último",desc:"Último especialista atendido neste setor"}].map(it=>(<div key={it.icon} style={{display:"flex",alignItems:"flex-start",gap:8,padding:"8px",background:"#f9fafb",borderRadius:10}}><span style={{fontSize:16,flexShrink:0,minWidth:24,textAlign:"center"}}>{it.icon}</span><div><div style={{fontWeight:600,fontSize:12}}>{it.label}</div><div style={{fontSize:11,color:"#888"}}>{it.desc}</div></div></div>))}
           </div>
         </div>
       </>}
@@ -765,17 +707,7 @@ export default function App(){
       {tab==="Salas"&&<SalasTab/>}
       {tab==="Presença"&&<PresencaTab/>}
       {tab==="Pausas"&&(<div style={C.card}><div style={{fontWeight:700,marginBottom:14,fontSize:14}}>Registro de Pausas e Anotações</div>{!evts.length&&<div style={{fontSize:13,color:"#888",textAlign:"center",padding:"2rem"}}>Nenhum registro ainda.</div>}{evts.map(e=>{const meta={pausa_inicio:{l:"Pausa",bg:"#FEF3C7",col:"#B45309",icon:"⏸"},pausa_fim:{l:"Retorno",bg:"#D1FAE5",col:"#10B981",icon:"▶️"},nota:{l:"Nota",bg:"#EDE9FE",col:"#7C3AED",icon:"📝"}};const m=meta[e.type]||{l:e.type,bg:"#f3f4f6",col:"#555",icon:"•"};return(<div key={e.id} style={{display:"flex",alignItems:"flex-start",gap:10,padding:"10px 0",borderBottom:"1px solid #f3f4f6"}}><div style={{width:32,height:32,borderRadius:10,background:m.bg,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,flexShrink:0}}>{m.icon}</div><div style={{flex:1}}><div style={{display:"flex",justifyContent:"space-between"}}><div><span style={{fontWeight:700,fontSize:13}}>{e.spec_name}</span><span style={{marginLeft:8,padding:"1px 8px",borderRadius:20,fontSize:11,fontWeight:600,background:m.bg,color:m.col}}>{m.l}</span></div><span style={{fontSize:11,color:"#aaa"}}>{new Date(e.created_at).toLocaleString("pt-BR")}</span></div>{e.detail&&e.detail!=="—"&&<div style={{fontSize:12,color:"#888",marginTop:3}}>{e.detail}</div>}{e.by_user&&<div style={{fontSize:11,color:"#7C3AED",marginTop:3}}>👤 {e.by_user}</div>}</div></div>);})}</div>)}
-      {tab==="Histórico"&&(<div><div style={{display:"flex",gap:6,marginBottom:12,flexWrap:"wrap",alignItems:"center"}}>{Object.keys(histFilters).map(hf=><button key={hf} style={{padding:"7px 16px",borderRadius:10,border:`2px solid ${hFilter===hf?"#7C3AED":"#e5e7eb"}`,background:hFilter===hf?"#EDE9FE":"#fff",color:hFilter===hf?"#7C3AED":"#888",fontSize:13,fontWeight:hFilter===hf?700:400,cursor:"pointer"}} onClick={()=>setHFilter(hf)}>{hf}</button>)}<span style={{marginLeft:"auto",fontSize:13,color:"#888",fontWeight:500}}>{filteredHist.length} registros</span></div><div style={C.card}>{!filteredHist.length&&<div style={{fontSize:13,color:"#888",textAlign:"center",padding:"2rem"}}>Nenhum registro.</div>}          {filteredHist.map((h,i)=>{const qInfo=QUEUES.find(q=>q.id===h.queue_id);return(<div key={h.id} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 0",borderBottom:"1px solid #f3f4f6",flexWrap:"wrap"}}><span style={{fontSize:11,color:"#ccc",minWidth:24,textAlign:"right",fontWeight:600}}>{filteredHist.length-i}</span><span style={{padding:"2px 10px",borderRadius:20,fontSize:11,fontWeight:700,background:qInfo?.light||"#f3f4f6",color:qInfo?.color||"#555"}}>{qInfo?.icon} {qInfo?.label}</span>{h.type!=="normal"&&<span style={{padding:"2px 10px",borderRadius:20,fontSize:11,fontWeight:700,background:"#FEF3C7",color:"#B45309"}}>{h.type}</span>}<span style={{flex:1,fontSize:13,fontWeight:700}}>{h.spec_name}</span>{h.by_user&&<span style={{fontSize:11,color:"#7C3AED",background:"#EDE9FE",padding:"1px 8px",borderRadius:20,fontWeight:600}}>👤 {h.by_user}</span>}<span style={{fontSize:11,color:"#aaa"}}>{new Date(h.created_at).toLocaleString("pt-BR")}</span>          {adminOk&&<button style={{background:"#FEE2E2",border:"none",borderRadius:6,padding:"2px 8px",cursor:"pointer",fontSize:11,color:"#EF4444",flexShrink:0}} onClick={async()=>{
-            await sb(`history?id=eq.${h.id}`,"DELETE");
-            // recalcula specs do banco para refletir mudança
-            const [hi2,sp]=await Promise.all([
-              sb("history?order=created_at.desc&limit=1000"),
-              sb("specialists?order=name")
-            ]);
-            if(hi2)setHist(hi2);
-            if(sp)setSpecs(sp);
-            showToast("Registro removido!");
-          }}>✕</button>}</div>);})}</div>{dayLog.length>0&&(<><div style={{fontWeight:700,fontSize:14,margin:"20px 0 12px"}}>☀️ Fechamentos de dia</div>{dayLog.map(d=>(<div key={d.id} style={{...C.card,borderLeft:"4px solid #7C3AED"}}><div style={{display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:8}}><div><div style={{fontWeight:700,fontSize:14,textTransform:"capitalize"}}>{d.closed_label}</div><div style={{fontSize:12,color:"#888",marginTop:2}}>👤 {d.closed_by} · {new Date(d.created_at).toLocaleString("pt-BR")}</div></div><div style={{display:"flex",gap:12}}><div style={{textAlign:"center",background:"#EDE9FE",borderRadius:10,padding:"6px 14px"}}><div style={{fontSize:11,color:"#7C3AED",fontWeight:600}}>Normal</div><div style={{fontSize:22,fontWeight:800,color:"#7C3AED"}}>{d.total_normal}</div></div><div style={{textAlign:"center",background:"#FEF3C7",borderRadius:10,padding:"6px 14px"}}><div style={{fontSize:11,color:"#B45309",fontWeight:600}}>Indicações</div><div style={{fontSize:22,fontWeight:800,color:"#B45309"}}>{d.total_ind}</div></div></div></div>{d.summary?.length>0&&<div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:10}}>{d.summary.map(sm=>{const qi=QUEUES.find(q=>q.label===sm.queue);return<div key={sm.queue} style={{padding:"4px 12px",borderRadius:20,fontSize:12,fontWeight:600,background:qi?.light||"#f3f4f6",color:qi?.color||"#555"}}>{qi?.icon} {sm.queue} · {sm.normal}N{sm.ind>0?` · ${sm.ind}I`:""}</div>;})}</div>}</div>))}</>)}</div>)}
+      {tab==="Histórico"&&(<div><div style={{display:"flex",gap:6,marginBottom:12,flexWrap:"wrap",alignItems:"center"}}>{Object.keys(histFilters).map(hf=><button key={hf} style={{padding:"7px 16px",borderRadius:10,border:`2px solid ${hFilter===hf?"#7C3AED":"#e5e7eb"}`,background:hFilter===hf?"#EDE9FE":"#fff",color:hFilter===hf?"#7C3AED":"#888",fontSize:13,fontWeight:hFilter===hf?700:400,cursor:"pointer"}} onClick={()=>setHFilter(hf)}>{hf}</button>)}<span style={{marginLeft:"auto",fontSize:13,color:"#888",fontWeight:500}}>{filteredHist.length} registros</span></div><div style={C.card}>{!filteredHist.length&&<div style={{fontSize:13,color:"#888",textAlign:"center",padding:"2rem"}}>Nenhum registro.</div>}{filteredHist.map((h,i)=>{const qInfo=QUEUES.find(q=>q.id===h.queue_id);return(<div key={h.id} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 0",borderBottom:"1px solid #f3f4f6",flexWrap:"wrap"}}><span style={{fontSize:11,color:"#ccc",minWidth:24,textAlign:"right",fontWeight:600}}>{filteredHist.length-i}</span><span style={{padding:"2px 10px",borderRadius:20,fontSize:11,fontWeight:700,background:qInfo?.light||"#f3f4f6",color:qInfo?.color||"#555"}}>{qInfo?.icon} {qInfo?.label}</span>{h.type!=="normal"&&<span style={{padding:"2px 10px",borderRadius:20,fontSize:11,fontWeight:700,background:"#FEF3C7",color:"#B45309"}}>{h.type}</span>}<span style={{flex:1,fontSize:13,fontWeight:700}}>{h.spec_name}</span>{h.by_user&&<span style={{fontSize:11,color:"#7C3AED",background:"#EDE9FE",padding:"1px 8px",borderRadius:20,fontWeight:600}}>👤 {h.by_user}</span>}<span style={{fontSize:11,color:"#aaa"}}>{new Date(h.created_at).toLocaleString("pt-BR")}</span>{adminOk&&<button style={{background:"#FEE2E2",border:"none",borderRadius:6,padding:"2px 8px",cursor:"pointer",fontSize:11,color:"#EF4444",flexShrink:0}} onClick={async()=>{await sb(`history?id=eq.${h.id}`,"DELETE");const [hi2,sp]=await Promise.all([sb("history?order=created_at.desc&limit=1000"),sb("specialists?order=name")]);if(hi2)setHist(hi2);if(sp)setSpecs(sp);showToast("Registro removido!");}}>✕</button>}</div>);})}</div>{dayLog.length>0&&(<><div style={{fontWeight:700,fontSize:14,margin:"20px 0 12px"}}>☀️ Fechamentos de dia</div>{dayLog.map(d=>(<div key={d.id} style={{...C.card,borderLeft:"4px solid #7C3AED"}}><div style={{display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:8}}><div><div style={{fontWeight:700,fontSize:14,textTransform:"capitalize"}}>{d.closed_label}</div><div style={{fontSize:12,color:"#888",marginTop:2}}>👤 {d.closed_by} · {new Date(d.created_at).toLocaleString("pt-BR")}</div></div><div style={{display:"flex",gap:12}}><div style={{textAlign:"center",background:"#EDE9FE",borderRadius:10,padding:"6px 14px"}}><div style={{fontSize:11,color:"#7C3AED",fontWeight:600}}>Normal</div><div style={{fontSize:22,fontWeight:800,color:"#7C3AED"}}>{d.total_normal}</div></div><div style={{textAlign:"center",background:"#FEF3C7",borderRadius:10,padding:"6px 14px"}}><div style={{fontSize:11,color:"#B45309",fontWeight:600}}>Indicações</div><div style={{fontSize:22,fontWeight:800,color:"#B45309"}}>{d.total_ind}</div></div></div></div>{d.summary?.length>0&&<div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:10}}>{d.summary.map(sm=>{const qi=QUEUES.find(q=>q.label===sm.queue);return<div key={sm.queue} style={{padding:"4px 12px",borderRadius:20,fontSize:12,fontWeight:600,background:qi?.light||"#f3f4f6",color:qi?.color||"#555"}}>{qi?.icon} {sm.queue} · {sm.normal}N{sm.ind>0?` · ${sm.ind}I`:""}</div>;})}</div>}</div>))}</>)}</div>)}
     </div>
   );
 }
