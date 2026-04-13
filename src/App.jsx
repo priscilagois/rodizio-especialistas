@@ -361,6 +361,8 @@ export default function App(){
     }
     const th={padding:"4px 6px",fontSize:11,fontWeight:600,textAlign:"center",border:"1px solid #c4b5fd",background:"#f9fafb",whiteSpace:"nowrap",color:"#555"};
     const td={padding:"4px 6px",fontSize:12,textAlign:"center",border:"1px solid #e5e7eb",whiteSpace:"nowrap"};
+    const thDay={...th,borderLeft:"2px solid #7C3AED"};
+    const tdDayFirst={...td,borderLeft:"2px solid #c4b5fd"};
     return(
       <div>
         <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap",alignItems:"center"}}>
@@ -380,23 +382,23 @@ export default function App(){
             <thead>
               <tr>
                 <th style={{...th,textAlign:"left",minWidth:130}} rowSpan={2}>Especialista</th>
-                {wd.map(d=><th key={d.toISOString()} style={{...th,minWidth:72}} colSpan={3}>{d.toLocaleDateString("pt-BR",{day:"2-digit",month:"2-digit"})}</th>)}
-                <th style={{...th,background:qInfo.light,color:qInfo.color}} colSpan={3}>Total</th>
+                {wd.map(d=><th key={d.toISOString()} style={{...thDay,minWidth:72}} colSpan={3}>{d.toLocaleDateString("pt-BR",{day:"2-digit",month:"2-digit"})}</th>)}
+                <th style={{...thDay,background:qInfo.light,color:qInfo.color}} colSpan={3}>Total</th>
               </tr>
               <tr>
                 {wd.map(d=>[
-                  <th key={d.toISOString()+"n"} style={{...th,fontSize:10,color:"#7C3AED"}}>N</th>,
+                  <th key={d.toISOString()+"n"} style={{...th,fontSize:10,color:"#7C3AED",borderLeft:"2px solid #7C3AED"}}>N</th>,
                   <th key={d.toISOString()+"i"} style={{...th,fontSize:10,color:"#F59E0B"}}>I</th>,
                   <th key={d.toISOString()+"rt"} style={{...th,fontSize:10,color:"#10B981"}}>RT</th>
                 ])}
-                <th style={{...th,fontSize:10,color:qInfo.color,background:qInfo.light}}>N</th>
+                <th style={{...th,fontSize:10,color:qInfo.color,background:qInfo.light,borderLeft:"2px solid #7C3AED"}}>N</th>
                 <th style={{...th,fontSize:10,color:"#B45309",background:"#FEF3C7"}}>I</th>
                 <th style={{...th,fontSize:10,color:"#10B981",background:"#D1FAE5"}}>RT</th>
               </tr>
             </thead>
             <tbody>
               {inQ.map((c,ri)=>{const rb=ri%2===0?"#fff":"#fafafa",tN=cntM(c.name,"normal"),tI=cntM(c.name,"indicacao")+cntM(c.name,"selecao");return(<tr key={c.id}><td style={{...td,textAlign:"left",fontWeight:600,background:rb,position:"sticky",left:0,zIndex:1}}><div style={{display:"flex",alignItems:"center",gap:6}}><div style={{width:20,height:20,borderRadius:"50%",background:qInfo.light,display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,fontWeight:700,color:qInfo.color}}>{initials(c.name)}</div>{c.name}</div></td>{wd.map(d=>{const dk=d.toLocaleDateString("pt-BR"),n=cnt(c.name,dk,"normal"),ii=cnt(c.name,dk,"indicacao")+cnt(c.name,dk,"selecao");return[<td key={dk+"n"} style={{...td,background:n>0?"#EDE9FE":rb,color:n>0?"#7C3AED":"#ddd",fontWeight:n>0?600:400}}>{n||""}</td>,<td key={dk+"i"} style={{...td,background:ii>0?"#FEF3C7":rb,color:ii>0?"#B45309":"#ddd",fontWeight:ii>0?600:400}}>{ii||""}</td>];})}<td style={{...td,fontWeight:700,background:qInfo.light,color:qInfo.color}}>{tN||""}</td><td style={{...td,fontWeight:700,background:"#FEF3C7",color:"#B45309"}}>{tI||""}</td></tr>);})}
-                <tr style={{borderTop:`2px solid ${qInfo.color}40`}}><td style={{...td,textAlign:"left",fontWeight:700,background:"#f9fafb"}}>TOTAL</td>{wd.map(d=>{const dk=d.toLocaleDateString("pt-BR"),n=inQ.reduce((a,c)=>a+cnt(c.name,dk,"normal"),0),ii=inQ.reduce((a,c)=>a+cnt(c.name,dk,"indicacao")+cnt(c.name,dk,"selecao"),0),rt=inQ.reduce((a,c)=>a+cntRT(c.name,dk),0);return[<td key={dk+"tn"} style={{...td,fontWeight:600,background:n>0?qInfo.light:"#f9fafb",color:qInfo.color}}>{n||""}</td>,<td key={dk+"ti"} style={{...td,fontWeight:600,background:ii>0?"#FEF3C7":"#f9fafb",color:"#B45309"}}>{ii||""}</td>,<td key={dk+"trt"} style={{...td,fontWeight:600,background:rt>0?"#D1FAE5":"#f9fafb",color:"#10B981"}}>{rt||""}</td>];})}<td style={{...td,fontWeight:700,background:qInfo.light,color:qInfo.color}}>{inQ.reduce((a,c)=>a+cntM(c.name,"normal"),0)||""}</td><td style={{...td,fontWeight:700,background:"#FEF3C7",color:"#B45309"}}>{inQ.reduce((a,c)=>a+cntM(c.name,"indicacao")+cntM(c.name,"selecao"),0)||""}</td><td style={{...td,fontWeight:700,background:"#D1FAE5",color:"#10B981"}}>{inQ.reduce((a,c)=>a+cntMRT(c.name),0)||""}</td></tr>
+                <tr style={{borderTop:`2px solid ${qInfo.color}40`}}><td style={{...td,textAlign:"left",fontWeight:700,background:"#f9fafb",position:"sticky",left:0,zIndex:2,boxShadow:"2px 0 4px #0001"}}>TOTAL</td>{wd.map(d=>{const dk=d.toLocaleDateString("pt-BR"),n=inQ.reduce((a,c)=>a+cnt(c.name,dk,"normal"),0),ii=inQ.reduce((a,c)=>a+cnt(c.name,dk,"indicacao")+cnt(c.name,dk,"selecao"),0),rt=inQ.reduce((a,c)=>a+cntRT(c.name,dk),0);return[<td key={dk+"tn"} style={{...tdDayFirst,fontWeight:600,background:n>0?qInfo.light:"#f9fafb",color:qInfo.color}}>{n||""}</td>,<td key={dk+"ti"} style={{...td,fontWeight:600,background:ii>0?"#FEF3C7":"#f9fafb",color:"#B45309"}}>{ii||""}</td>,<td key={dk+"trt"} style={{...td,fontWeight:600,background:rt>0?"#D1FAE5":"#f9fafb",color:"#10B981"}}>{rt||""}</td>];})}<td style={{...tdDayFirst,fontWeight:700,background:qInfo.light,color:qInfo.color}}>{inQ.reduce((a,c)=>a+cntM(c.name,"normal"),0)||""}</td><td style={{...td,fontWeight:700,background:"#FEF3C7",color:"#B45309"}}>{inQ.reduce((a,c)=>a+cntM(c.name,"indicacao")+cntM(c.name,"selecao"),0)||""}</td><td style={{...td,fontWeight:700,background:"#D1FAE5",color:"#10B981"}}>{inQ.reduce((a,c)=>a+cntMRT(c.name),0)||""}</td></tr>
             </tbody>
           </table>
         </div>
