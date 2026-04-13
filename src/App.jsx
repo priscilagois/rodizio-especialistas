@@ -141,10 +141,7 @@ export default function App(){
   const todayISOStr=todayISO();
 
   function totalOf(c,qId){
-    // Calcula do histórico do dia para garantir sincronia
-    const fromHist=hist.filter(h=>h.spec_name===c.name&&h.queue_id===qId&&h.date_key===today).length;
-    // Se já tem histórico hoje, usa ele; senão usa o counts salvo (início do dia)
-    return fromHist>0?fromHist:(c.counts?.[qId]||0)+(c.ind?.[qId]||0);
+    return hist.filter(h=>h.spec_name===c.name&&h.queue_id===qId&&h.date_key===today).length;
   }
   function prevTotal(name,qId){return prevCounts[qId]?.[name]||0;}
   function orderScore(c,qId){const t=totalOf(c,qId);return t*10000+(t===0?prevTotal(c.name,qId):0);}
