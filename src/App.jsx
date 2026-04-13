@@ -142,10 +142,13 @@ export default function App(){
   const todayISOStr=todayISO();
 
   function totalOf(c,qId){
-    return hist.filter(h=>h.spec_name===c.name&&h.queue_id===qId&&h.date_key===today).length;
+    return(c.counts?.[qId]||0)+(c.ind?.[qId]||0);
   }
   function prevTotal(name,qId){return prevCounts[qId]?.[name]||0;}
-  function orderScore(c,qId){const t=totalOf(c,qId);return t*10000+(t===0?prevTotal(c.name,qId):0);}
+  function orderScore(c,qId){
+    const t=totalOf(c,qId);
+    return t*10000+(t===0?prevTotal(c.name,qId):0);
+  }
   function activePool(qId){return specs.filter(c=>c.status==="active"&&c.queues.includes(qId)).sort((a,b)=>orderScore(a,qId)-orderScore(b,qId)||a.name.localeCompare(b.name,"pt"));}
   function selPool(qId){return specs.filter(c=>c.status==="active"&&c.queues.includes(qId)&&c.selecao).sort((a,b)=>orderScore(a,qId)-orderScore(b,qId)||a.name.localeCompare(b.name,"pt"));}
 
@@ -342,7 +345,7 @@ export default function App(){
                   <button style={{padding:"3px 9px",borderRadius:8,border:"none",background:isPaused?"#EDE9FE":"#f3f4f6",cursor:"pointer",fontSize:11,fontWeight:600,color:isPaused?"#7C3AED":"#888"}} onClick={()=>{if(!isPaused){setMTxt("");setModal({type:"pausar",spec:c});}else setPaused(c,false);}}>⏸ Pausa</button>
                   <button style={{padding:"3px 9px",borderRadius:8,border:"none",background:"#f3f4f6",cursor:"pointer",fontSize:11,fontWeight:600,color:"#888"}} onClick={()=>{setMTxt(c.note||"");setModal({type:"nota",spec:c});}}>📝 Nota</button>
                   <span style={{padding:"3px 9px",borderRadius:8,fontSize:11,fontWeight:600,background:credits>0?"#FEF3C7":"#f3f4f6",color:credits>0?"#B45309":"#aaa",cursor:"pointer"}} onClick={()=>addInd(qId,c.id)}>📌 {credits}</span>
-                  <span style={{padding:"3px 9px",borderRadius:8,fontSize:11,fontWeight:600,background:"#D1FAE5",color:"#10B981",cursor:"pointer"}} onClick={()=>{setAvulsoTxt("");setAvulsoModal({spec:c,qId});}}>+1 Avulso</span>
+                  <span style={{padding:"3px 9px",borderRadius:8,fontSize:11,fontWeight:600,background:"#D1FAE5",color:"#10B981",cursor:"pointer"}} onClick={()=>addManual(qId,c.id)}>+1 Avulso</span>
                 </div>
               </div>
             );
