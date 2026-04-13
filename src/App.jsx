@@ -682,8 +682,19 @@ export default function App(){
           );
         })}
         {/* Cards de resumo no final */}
-        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(110px,1fr))",gap:10,marginTop:4}}>
-          {[{l:"Total",v:specs.length,c:"#7C3AED",bg:"#EDE9FE"},{l:"Ativos",v:totalActive,c:"#10B981",bg:"#D1FAE5"},{l:"Pausados",v:totalOff,c:"#F59E0B",bg:"#FEF3C7"},{l:"Novos hoje",v:normalToday,c:"#4F46E5",bg:"#E0E7FF"},{l:"Total hoje",v:totalToday,c:"#7C3AED",bg:"#EDE9FE"}].map(k=>(<div key={k.l} style={{background:k.bg,borderRadius:14,padding:"0.9rem",textAlign:"center"}}><div style={{fontSize:11,color:k.c,fontWeight:600,marginBottom:4,opacity:0.8}}>{k.l}</div><div style={{fontSize:26,fontWeight:800,color:k.c}}>{k.v}</div></div>))}
+        <div style={{display:"flex",gap:16,marginTop:4,flexWrap:"wrap"}}>
+          <div style={{flex:1,minWidth:200}}>
+            <div style={{fontSize:11,fontWeight:700,color:"#888",marginBottom:6,textTransform:"uppercase",letterSpacing:1}}>Especialistas</div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10}}>
+              {[{l:"Total",v:specs.length,c:"#7C3AED",bg:"#EDE9FE"},{l:"Ativos",v:totalActive,c:"#10B981",bg:"#D1FAE5"},{l:"Pausados",v:totalOff,c:"#F59E0B",bg:"#FEF3C7"}].map(k=>(<div key={k.l} style={{background:k.bg,borderRadius:14,padding:"0.9rem",textAlign:"center"}}><div style={{fontSize:11,color:k.c,fontWeight:600,marginBottom:4,opacity:0.8}}>{k.l}</div><div style={{fontSize:26,fontWeight:800,color:k.c}}>{k.v}</div></div>))}
+            </div>
+          </div>
+          <div style={{flex:1,minWidth:160}}>
+            <div style={{fontSize:11,fontWeight:700,color:"#888",marginBottom:6,textTransform:"uppercase",letterSpacing:1}}>Clientes</div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:10}}>
+              {[{l:"Novos hoje",v:normalToday,c:"#4F46E5",bg:"#E0E7FF"},{l:"Total hoje",v:totalToday,c:"#7C3AED",bg:"#EDE9FE"}].map(k=>(<div key={k.l} style={{background:k.bg,borderRadius:14,padding:"0.9rem",textAlign:"center"}}><div style={{fontSize:11,color:k.c,fontWeight:600,marginBottom:4,opacity:0.8}}>{k.l}</div><div style={{fontSize:26,fontWeight:800,color:k.c}}>{k.v}</div></div>))}
+            </div>
+          </div>
         </div>
       </>)}
       {tab==="Rodízio"&&<>
