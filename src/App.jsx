@@ -143,43 +143,22 @@ export default function App(){
   const today=todayKey();
   const todayISOStr=todayISO();
 
-  function totalOf(c,qId){
-    return hist.filter(h=>h.spec_name===c.name&&h.queue_id===qId&&h.date_key===today).length;
-  }
+  function totalOf(c,qId){return hist.filter(h=>h.spec_name===c.name&&h.queue_id===qId&&h.date_key===today).length;}
   function prevTotal(name,qId){return prevCounts[qId]?.[name]||0;}
-  function orderScore(c,qId){
-    const t=totalOf(c,qId);
-    return t*10000+(t===0?prevTotal(c.name,qId):0);
-  }
+  function orderScore(c,qId){const t=totalOf(c,qId);return t*10000+(t===0?prevTotal(c.name,qId):0);}
   function activePool(qId){return specs.filter(c=>c.status==="active"&&c.queues.includes(qId)).sort((a,b)=>orderScore(a,qId)-orderScore(b,qId)||a.name.localeCompare(b.name,"pt"));}
   function selPool(qId){return specs.filter(c=>c.status==="active"&&c.queues.includes(qId)&&c.selecao).sort((a,b)=>orderScore(a,qId)-orderScore(b,qId)||a.name.localeCompare(b.name,"pt"));}
 
-  function handleNameSubmit(){
-    const name=tmpName.trim();if(!name)return;
-    if(isAdmin(name)){setAuthStep("pin_enter_admin");return;}
-    const sp=localStorage.getItem("rodizio_pin_"+name);
-    setAuthStep(sp?"pin_enter":"pin_create");
-  }
-  function handleAdminPinSubmit(){
-    if(tmpPin===ADMIN_PIN){const name=tmpName.trim();localStorage.setItem("rodizio_user",name);setUserName(name);setUserIsAdmin(true);setAdminOk(true);setAuthStep("done");setTmpPin("");}
-    else{showToast("PIN incorreto","error");setTmpPin("");}
-  }
-  function handlePinCreate(){
-    if(tmpPin.length<4){showToast("PIN deve ter ao menos 4 caracteres","error");return;}
-    if(tmpPin!==tmpPin2){showToast("PINs não coincidem","error");return;}
-    const name=tmpName.trim();localStorage.setItem("rodizio_pin_"+name,tmpPin);localStorage.setItem("rodizio_user",name);
-    setUserName(name);setUserIsAdmin(false);setAdminOk(false);setAuthStep("done");setTmpPin("");setTmpPin2("");
-  }
-  function handlePinEnter(){
-    const name=tmpName.trim(),stored=localStorage.getItem("rodizio_pin_"+name);
-    if(tmpPin===stored){localStorage.setItem("rodizio_user",name);setUserName(name);setUserIsAdmin(false);setAdminOk(false);setAuthStep("done");setTmpPin("");}
-    else{showToast("PIN incorreto","error");setTmpPin("");}
-  }
+  function handleNameSubmit(){const name=tmpName.trim();if(!name)return;if(isAdmin(name)){setAuthStep("pin_enter_admin");return;}const sp=localStorage.getItem("rodizio_pin_"+name);setAuthStep(sp?"pin_enter":"pin_create");}
+  function handleAdminPinSubmit(){if(tmpPin===ADMIN_PIN){const name=tmpName.trim();localStorage.setItem("rodizio_user",name);setUserName(name);setUserIsAdmin(true);setAdminOk(true);setAuthStep("done");setTmpPin("");}else{showToast("PIN incorreto","error");setTmpPin("");}}
+  function handlePinCreate(){if(tmpPin.length<4){showToast("PIN deve ter ao menos 4 caracteres","error");return;}if(tmpPin!==tmpPin2){showToast("PINs não coincidem","error");return;}const name=tmpName.trim();localStorage.setItem("rodizio_pin_"+name,tmpPin);localStorage.setItem("rodizio_user",name);setUserName(name);setUserIsAdmin(false);setAdminOk(false);setAuthStep("done");setTmpPin("");setTmpPin2("");}
+  function handlePinEnter(){const name=tmpName.trim(),stored=localStorage.getItem("rodizio_pin_"+name);if(tmpPin===stored){localStorage.setItem("rodizio_user",name);setUserName(name);setUserIsAdmin(false);setAdminOk(false);setAuthStep("done");setTmpPin("");}else{showToast("PIN incorreto","error");setTmpPin("");}}
   function handleLogout(){localStorage.removeItem("rodizio_user");setUserName("");setTmpName("");setTmpPin("");setTmpPin2("");setUserIsAdmin(false);setAdminOk(false);setAuthStep("name");}
 
   async function rotateNormal(qId){if(saving)return;setSaving(true);try{const res=await rpc("assign_next",{p_queue_id:qId,p_type:"normal",p_user:userName});if(res?.error)showToast("Nenhum disponível.","error");else{showToast(`Atribuído: ${res.specialist.name}`);const[sp,la]=await Promise.all([sb("specialists?order=name"),sb("last_assigned?select=*")]);if(sp?.length)setSpecs(sp);const lm={};(la||[]).forEach(r=>{lm[r.queue_id]={name:r.spec_name,type:r.type};});setLastMap(lm);const hi=await sb("history?order=created_at.desc&limit=1000");if(hi?.length)setHist(hi);}}catch{showToast("Erro.","error");}setSaving(false);}
   async function rotateSelecao(qId){const pool=selPool(qId);if(!pool.length){showToast("Nenhum com ⭐.","error");return;}if(saving)return;setSaving(true);try{const spec=pool[0];await sb(`specialists?id=eq.${spec.id}`,"PATCH",{ind:{...spec.ind,[qId]:(spec.ind?.[qId]||0)+1}});const res=await rpc("assign_next",{p_queue_id:qId,p_type:"selecao",p_user:userName});if(res?.error)showToast("Erro.","error");else{showToast(`Seleção: ${res.specialist.name}`);const sp=await sb("specialists?order=name");if(sp?.length)setSpecs(sp);}}catch{showToast("Erro.","error");}setSaving(false);}
   async function rotateRecart(qId){if(saving)return;setSaving(true);try{const res=await rpc("assign_recart",{p_queue_id:qId,p_user:userName});if(res?.error)showToast("Nenhum disponível.","error");else{showToast(`Recart. Férias: ${res.specialist.name}`);const sp=await sb("specialists?order=name");if(sp?.length)setSpecs(sp);}}catch{showToast("Erro.","error");}setSaving(false);}
+
   async function addInd(qId,specId){
     const spec=specs.find(c=>c.id===specId);if(!spec)return;
     try{
@@ -226,7 +205,7 @@ export default function App(){
     const summary=QUEUES.map(q=>{const e=hist.filter(h=>h.date_key===yKey&&h.queue_id===q.id);return{queue:q.label,normal:e.filter(h=>h.type==="normal").length,ind:e.filter(h=>h.type!=="normal").length,total:e.length};}).filter(s=>s.total>0);
     try{
       await sb("day_closings","POST",{closed_date:yKey,closed_label:yLabel,closed_by:userName,summary,total_normal:summary.reduce((a,s)=>a+s.normal,0),total_ind:summary.reduce((a,s)=>a+s.ind,0)});
-      for(const s of specs)await sb(`specialists?id=eq.${s.id}`,"PATCH",{counts:{}});
+      for(const s of specs)await sb(`specialists?id=eq.${s.id}`,"PATCH",{counts:{},ind:{}});
       await sb("last_assigned","DELETE");
       setLastMap({});
       const pc={};hist.filter(h=>h.date_key===yKey).forEach(h=>{if(!pc[h.queue_id])pc[h.queue_id]={};pc[h.queue_id][h.spec_name]=(pc[h.queue_id][h.spec_name]||0)+1;});
@@ -609,7 +588,7 @@ export default function App(){
             <span style={{fontWeight:700,fontSize:15}}>+1 Avulso — {avulsoModal.spec.name}</span>
             <button style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"#aaa"}} onClick={()=>{setAvulsoModal(null);setAvulsoTxt("");}}>×</button>
           </div>
-          <div style={{fontSize:13,color:"#555",marginBottom:8}}>Informe o motivo (ex: cliente presencial, retorno, indicação gerencial)</div>
+          <div style={{fontSize:13,color:"#555",marginBottom:8}}>Informe o motivo</div>
           <input style={C.inp} placeholder="Motivo obrigatório" value={avulsoTxt} onChange={e=>setAvulsoTxt(e.target.value)} autoFocus onKeyDown={e=>{if(e.key==="Enter"&&avulsoTxt.trim()){addManual(avulsoModal.qId,avulsoModal.spec.id);setAvulsoModal(null);setAvulsoTxt("");}}}/>
           <div style={{display:"flex",gap:8,marginTop:12}}>
             <button style={{...C.btnP,background:"#10B981"}} onClick={()=>{if(!avulsoTxt.trim()){showToast("Informe o motivo","error");return;}addManual(avulsoModal.qId,avulsoModal.spec.id);setAvulsoModal(null);setAvulsoTxt("");}}>Confirmar</button>
@@ -634,10 +613,7 @@ export default function App(){
             <div key={q.id} style={{...C.card,padding:0,overflow:"hidden",marginBottom:14}}>
               <div style={{padding:"8px 16px",background:q.color,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
                 <div style={{display:"flex",alignItems:"center",gap:8}}><span style={{fontSize:18}}>{q.icon}</span><span style={{fontWeight:700,fontSize:14,color:"#fff"}}>{q.label}</span><span style={{fontSize:11,color:"#ffffff99",fontWeight:500}}>{inQ.filter(c=>c.status==="active").length} ativos</span></div>
-                <div style={{display:"flex",gap:12,alignItems:"center"}}>
-                  {firstToday&&<span style={{fontSize:11,color:"#ffffffcc"}}>🏁 Iniciou: <strong style={{color:"#fff"}}>{firstToday.spec_name}</strong></span>}
-                  <span style={{fontSize:11,color:"#fff",background:"rgba(255,255,255,0.2)",borderRadius:20,padding:"2px 10px",fontWeight:700}}>Total hoje: {totalSetor}</span>
-                </div>
+                <div style={{display:"flex",gap:12,alignItems:"center"}}>{firstToday&&<span style={{fontSize:11,color:"#ffffffcc"}}>🏁 Iniciou: <strong style={{color:"#fff"}}>{firstToday.spec_name}</strong></span>}<span style={{fontSize:11,color:"#fff",background:"rgba(255,255,255,0.2)",borderRadius:20,padding:"2px 10px",fontWeight:700}}>Total hoje: {totalSetor}</span></div>
               </div>
               <table style={{width:"100%",borderCollapse:"collapse"}}>
                 <thead>
@@ -670,7 +646,7 @@ export default function App(){
                         <td style={{padding:"8px",textAlign:"center"}}><span style={{fontWeight:700,fontSize:14,color:nRT>0?"#10B981":"#ddd"}}>{nRT||"—"}</span></td>
                         <td style={{padding:"8px",textAlign:"center"}}><span style={{fontWeight:700,fontSize:14,color:nAvulso>0?"#4F46E5":"#ddd"}}>{nAvulso||"—"}</span></td>
                         <td style={{padding:"8px 16px",textAlign:"center"}}><span style={{fontWeight:800,fontSize:15,color:total>0?"#222":"#ddd"}}>{total||"—"}</span></td>
-                        <td style={{padding:"8px 16px",fontSize:12,color:off?"#cc0000":"#F59E0B",fontWeight:500}}><div style={{display:"flex",alignItems:"center",gap:6}}><span style={{flex:1}}>{c.note||""}</span>{c.note&&<button style={{background:"none",border:"none",cursor:"pointer",fontSize:12,color:"#aaa",padding:"0 2px"}} title="Limpar nota" onClick={()=>saveNote(c,"")}>✕</button>}<button style={{background:"none",border:"none",cursor:"pointer",fontSize:12,color:"#aaa",padding:"0 2px"}} title="Editar nota" onClick={()=>{setMTxt(c.note||"");setModal({type:"nota",spec:c});}}>✏️</button></div></td>
+                        <td style={{padding:"8px 16px",fontSize:12,color:off?"#cc0000":"#F59E0B",fontWeight:500}}><div style={{display:"flex",alignItems:"center",gap:6}}><span style={{flex:1}}>{c.note||""}</span>{c.note&&<button style={{background:"none",border:"none",cursor:"pointer",fontSize:12,color:"#aaa",padding:"0 2px"}} onClick={()=>saveNote(c,"")}>✕</button>}<button style={{background:"none",border:"none",cursor:"pointer",fontSize:12,color:"#aaa",padding:"0 2px"}} onClick={()=>{setMTxt(c.note||"");setModal({type:"nota",spec:c});}}>✏️</button></div></td>
                       </tr>
                     );
                   })}
@@ -699,7 +675,7 @@ export default function App(){
         <div style={{...C.card,marginTop:8,borderTop:"3px solid #7C3AED"}}>
           <div style={{fontWeight:700,fontSize:13,marginBottom:12,color:"#7C3AED"}}>📖 Legenda</div>
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))",gap:8}}>
-            {[{icon:"▶️",label:"Próximo",desc:"Avança o rodízio normal"},{icon:"⭐",label:"Seleção",desc:"Marca para atendimentos especiais"},{icon:"🌴",label:"Férias",desc:"Coloca/retira de férias"},{icon:"⏸",label:"Pausa",desc:"Pausa/reativa por outro motivo"},{icon:"📝",label:"Nota",desc:"Adiciona anotação interna"},{icon:"📌",label:"Indicação",desc:"Créditos de indicação direta"},{icon:"🔁",label:"Recart. Temporária",desc:"Recarteirização durante ausência do titular (férias, licença, etc.)"},{icon:"+1",label:"Avulso",desc:"Carteirização direta por outro motivo (telefonema, presencial, etc.)"},{icon:"🆕",label:"Novos hoje",desc:"Total de clientes novos hoje neste setor"},{icon:"✅",label:"Último",desc:"Último especialista atendido neste setor"}].map(it=>(<div key={it.icon} style={{display:"flex",alignItems:"flex-start",gap:8,padding:"8px",background:"#f9fafb",borderRadius:10}}><span style={{fontSize:16,flexShrink:0,minWidth:24,textAlign:"center"}}>{it.icon}</span><div><div style={{fontWeight:600,fontSize:12}}>{it.label}</div><div style={{fontSize:11,color:"#888"}}>{it.desc}</div></div></div>))}
+            {[{icon:"▶️",label:"Próximo",desc:"Avança o rodízio normal"},{icon:"⭐",label:"Seleção",desc:"Marca para atendimentos especiais"},{icon:"🌴",label:"Férias",desc:"Coloca/retira de férias"},{icon:"⏸",label:"Pausa",desc:"Pausa/reativa por outro motivo"},{icon:"📝",label:"Nota",desc:"Adiciona anotação interna"},{icon:"📌",label:"Indicação",desc:"Créditos de indicação direta"},{icon:"🔁",label:"Recart. Temporária",desc:"Recarteirização durante ausência do titular"},{icon:"+1",label:"Avulso",desc:"Carteirização direta por outro motivo"},{icon:"🆕",label:"Novos hoje",desc:"Total de clientes novos hoje neste setor"},{icon:"✅",label:"Último",desc:"Último especialista atendido neste setor"}].map(it=>(<div key={it.icon} style={{display:"flex",alignItems:"flex-start",gap:8,padding:"8px",background:"#f9fafb",borderRadius:10}}><span style={{fontSize:16,flexShrink:0,minWidth:24,textAlign:"center"}}>{it.icon}</span><div><div style={{fontWeight:600,fontSize:12}}>{it.label}</div><div style={{fontSize:11,color:"#888"}}>{it.desc}</div></div></div>))}
           </div>
         </div>
       </>}
