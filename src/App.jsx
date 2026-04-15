@@ -91,8 +91,6 @@ export default function App(){
   const [avulsoModal,setAvulsoModal]=useState(null);
   const [avulsoTxt,setAvulsoTxt]=useState("");
   const [cleanDate,setCleanDate]=useState("");
-  const [novoDiaModal,setNovoDiaModal]=useState(false);
-  const [novoDiaDate,setNovoDiaDate]=useState("");
   const notifRef=useRef(new Set());
 
   const [authStep,setAuthStep]=useState("idle");
@@ -205,14 +203,14 @@ export default function App(){
     const summary=QUEUES.map(q=>{const e=hist.filter(h=>h.date_key===yKey&&h.queue_id===q.id);return{queue:q.label,normal:e.filter(h=>h.type==="normal").length,ind:e.filter(h=>h.type!=="normal").length,total:e.length};}).filter(s=>s.total>0);
     try{
       await sb("day_closings","POST",{closed_date:yKey,closed_label:yLabel,closed_by:userName,summary,total_normal:summary.reduce((a,s)=>a+s.normal,0),total_ind:summary.reduce((a,s)=>a+s.ind,0)});
-      for(const s of specs)await sb(`specialists?id=eq.${s.id}`,"PATCH",{counts:{},ind:{}});
+      await sb("specialists","PATCH",{counts:{},ind:{}});
       await sb("last_assigned","DELETE");
       setLastMap({});
       const pc={};hist.filter(h=>h.date_key===yKey).forEach(h=>{if(!pc[h.queue_id])pc[h.queue_id]={};pc[h.queue_id][h.spec_name]=(pc[h.queue_id][h.spec_name]||0)+1;});
       setPrevCounts(pc);
       showToast("Novo dia iniciado!");
       const sp=await sb("specialists?order=name");if(sp?.length)setSpecs(sp);
-    }catch{showToast("Erro.","error");}
+    }catch(e){console.error(e);showToast("Erro.","error");}
   }
 
   async function saveBooking(){
@@ -273,9 +271,6 @@ export default function App(){
   const totalOff=specs.filter(c=>c.status!=="active").length;
   const normalToday=hist.filter(h=>h.date_key===today&&h.type==="normal").length;
   const totalToday=hist.filter(h=>h.date_key===today).length;
-  const rankMap={};hist.filter(h=>h.date_key===today).forEach(h=>{rankMap[h.spec_name]=(rankMap[h.spec_name]||0)+1;});
-  const ranking=Object.entries(rankMap).sort((a,b)=>b[1]-a[1]);
-  const maxRank=ranking[0]?.[1]||1;
   const now2=new Date();const tMonth=now2.getMonth()+1;const tYear=now2.getFullYear();
   const histFilters={"Hoje":h=>h.date_key===today,"Este mês":h=>{const p=h.date_key?.split("/");return p&&parseInt(p[1])===tMonth&&parseInt(p[2])===tYear;},"Este ano":h=>{const p=h.date_key?.split("/");return p&&parseInt(p[2])===tYear;}};
   const filteredHist=hist.filter(histFilters[hFilter]||histFilters["Hoje"]);
@@ -578,7 +573,7 @@ export default function App(){
                 <button style={{padding:"6px 12px",borderRadius:8,border:"1px solid #FECACA",background:"#FEE2E2",color:"#EF4444",fontSize:12,fontWeight:600,cursor:"pointer"}} onClick={async()=>{if(!cleanDate){showToast("Selecione uma data","error");return;}const dk=toBR(cleanDate);if(!confirm(`Apagar todos os registros de ${dk}?`))return;await sb(`history?date_key=eq.${dk}`,"DELETE");const hi=await sb("history?order=created_at.desc&limit=1000");if(hi)setHist(hi);setCleanDate("");setAdminOpen(false);showToast(`Registros de ${dk} apagados!`);}}>Apagar dia</button>
               </div>
             </div>
-            <button style={{padding:"8px 12px",borderRadius:8,border:"2px solid #EF4444",background:"#FEE2E2",color:"#EF4444",fontSize:12,fontWeight:700,cursor:"pointer",textAlign:"left"}} onClick={async()=>{if(!confirm("⚠️ ATENÇÃO: Isso vai apagar TODOS os dados. Tem certeza?"))return;await Promise.all([sb("history?id=gt.0","DELETE"),sb("events?id=gt.0","DELETE"),sb("meeting_bookings?id=gt.0","DELETE"),sb("presence_calendar?id=gt.0","DELETE"),sb("day_closings?id=gt.0","DELETE"),sb("last_assigned?queue_id=neq.","DELETE")]);for(const s of specs)await sb(`specialists?id=eq.${s.id}`,"PATCH",{counts:{},ind:{}});setHist([]);setEvts([]);setBookings([]);setPresence([]);setDayLog([]);setLastMap({});const sp=await sb("specialists?order=name");if(sp?.length)setSpecs(sp);setAdminOpen(false);showToast("Todos os dados foram apagados!");}}>⚠️ Apagar TUDO (reset completo)</button>
+            <button style={{padding:"8px 12px",borderRadius:8,border:"2px solid #EF4444",background:"#FEE2E2",color:"#EF4444",fontSize:12,fontWeight:700,cursor:"pointer",textAlign:"left"}} onClick={async()=>{if(!confirm("⚠️ ATENÇÃO: Isso vai apagar TODOS os dados. Tem certeza?"))return;await Promise.all([sb("history?id=gt.0","DELETE"),sb("events?id=gt.0","DELETE"),sb("meeting_bookings?id=gt.0","DELETE"),sb("presence_calendar?id=gt.0","DELETE"),sb("day_closings?id=gt.0","DELETE"),sb("last_assigned?queue_id=neq.","DELETE")]);await sb("specialists","PATCH",{counts:{},ind:{}});setHist([]);setEvts([]);setBookings([]);setPresence([]);setDayLog([]);setLastMap({});const sp=await sb("specialists?order=name");if(sp?.length)setSpecs(sp);setAdminOpen(false);showToast("Todos os dados foram apagados!");}}>⚠️ Apagar TUDO (reset completo)</button>
           </div>
         </div>
       )}
