@@ -63,7 +63,6 @@ export default function App(){
   const [evts,setEvts]=useState([]);
   const [dayLog,setDayLog]=useState([]);
   const [lastMap,setLastMap]=useState({});
-  const [prevCounts,setPrevCounts]=useState({});
   const [sdrs,setSdrs]=useState(INIT_SDRS);
   const [rooms,setRooms]=useState(INIT_ROOMS);
   const [bookings,setBookings]=useState([]);
@@ -113,18 +112,13 @@ export default function App(){
     (async()=>{
       try{
         const [sp,hi,ev,dc,la,sd,rm,bk,pr]=await Promise.all([
-          sb("specialists?order=name"),sb("history?order=created_at.desc&limit=1000"),
+          sb("specialists?order=name"),sb("history?order=created_at.desc&limit=2000"),
           sb("events?order=created_at.desc&limit=500"),sb("day_closings?order=created_at.desc&limit=90"),
           sb("last_assigned?select=*"),sb("sdrs?order=name"),sb("meeting_rooms?order=name"),
           sb("meeting_bookings?order=booking_date,start_time"),sb("presence_calendar?order=presence_date"),
         ]);
         if(sp?.length)setSpecs(sp);
-        if(hi?.length){
-          setHist(hi);
-          const yk=yesterdayKey(),pc={};
-          hi.filter(h=>h.date_key===yk).forEach(h=>{if(!pc[h.queue_id])pc[h.queue_id]={};pc[h.queue_id][h.spec_name]=(pc[h.queue_id][h.spec_name]||0)+1;});
-          setPrevCounts(pc);
-        }
+        if(hi?.length)setHist(hi);
         if(ev?.length)setEvts(ev);
         if(dc?.length)setDayLog(dc);
         if(sd?.length)setSdrs(sd);
@@ -141,11 +135,16 @@ export default function App(){
   const today=todayKey();
   const todayISOStr=todayISO();
 
-  function totalOf(c,qId){return hist.filter(h=>h.spec_name===c.name&&h.queue_id===qId&&h.date_key===today).length;}
-  function prevTotal(name,qId){return prevCounts[qId]?.[name]||0;}
-  function orderScore(c,qId){const t=totalOf(c,qId);return t*10000+(t===0?prevTotal(c.name,qId):0);}
+  // Usa counts do banco (igual ao assign_next) para ordenação e exibição no card/rodízio
+  function countsOf(c,qId){return(c.counts?.[qId]||0)+(c.ind?.[qId]||0);}
+  function orderScore(c,qId){return countsOf(c,qId)*10000+c.name.charCodeAt(0);}
   function activePool(qId){return specs.filter(c=>c.status==="active"&&c.queues.includes(qId)).sort((a,b)=>orderScore(a,qId)-orderScore(b,qId)||a.name.localeCompare(b.name,"pt"));}
   function selPool(qId){return specs.filter(c=>c.status==="active"&&c.queues.includes(qId)&&c.selecao).sort((a,b)=>orderScore(a,qId)-orderScore(b,qId)||a.name.localeCompare(b.name,"pt"));}
+
+  // Usa hist para o histórico permanente (aba Controle, Histórico)
+  function histOf(c,qId,type=null){
+    return hist.filter(h=>h.spec_name===c.name&&h.queue_id===qId&&h.date_key===today&&(type?h.type===type:true)).length;
+  }
 
   function handleNameSubmit(){const name=tmpName.trim();if(!name)return;if(isAdmin(name)){setAuthStep("pin_enter_admin");return;}const sp=localStorage.getItem("rodizio_pin_"+name);setAuthStep(sp?"pin_enter":"pin_create");}
   function handleAdminPinSubmit(){if(tmpPin===ADMIN_PIN){const name=tmpName.trim();localStorage.setItem("rodizio_user",name);setUserName(name);setUserIsAdmin(true);setAdminOk(true);setAuthStep("done");setTmpPin("");}else{showToast("PIN incorreto","error");setTmpPin("");}}
@@ -153,8 +152,8 @@ export default function App(){
   function handlePinEnter(){const name=tmpName.trim(),stored=localStorage.getItem("rodizio_pin_"+name);if(tmpPin===stored){localStorage.setItem("rodizio_user",name);setUserName(name);setUserIsAdmin(false);setAdminOk(false);setAuthStep("done");setTmpPin("");}else{showToast("PIN incorreto","error");setTmpPin("");}}
   function handleLogout(){localStorage.removeItem("rodizio_user");setUserName("");setTmpName("");setTmpPin("");setTmpPin2("");setUserIsAdmin(false);setAdminOk(false);setAuthStep("name");}
 
-  async function rotateNormal(qId){if(saving)return;setSaving(true);try{const res=await rpc("assign_next",{p_queue_id:qId,p_type:"normal",p_user:userName});if(res?.error)showToast("Nenhum disponível.","error");else{showToast(`Atribuído: ${res.specialist.name}`);const[sp,la]=await Promise.all([sb("specialists?order=name"),sb("last_assigned?select=*")]);if(sp?.length)setSpecs(sp);const lm={};(la||[]).forEach(r=>{lm[r.queue_id]={name:r.spec_name,type:r.type};});setLastMap(lm);const hi=await sb("history?order=created_at.desc&limit=1000");if(hi?.length)setHist(hi);}}catch{showToast("Erro.","error");}setSaving(false);}
-  async function rotateSelecao(qId){const pool=selPool(qId);if(!pool.length){showToast("Nenhum com ⭐.","error");return;}if(saving)return;setSaving(true);try{const spec=pool[0];await sb(`specialists?id=eq.${spec.id}`,"PATCH",{ind:{...spec.ind,[qId]:(spec.ind?.[qId]||0)+1}});const res=await rpc("assign_next",{p_queue_id:qId,p_type:"selecao",p_user:userName});if(res?.error)showToast("Erro.","error");else{showToast(`Seleção: ${res.specialist.name}`);const sp=await sb("specialists?order=name");if(sp?.length)setSpecs(sp);}}catch{showToast("Erro.","error");}setSaving(false);}
+  async function rotateNormal(qId){if(saving)return;setSaving(true);try{const res=await rpc("assign_next",{p_queue_id:qId,p_type:"normal",p_user:userName});if(res?.error)showToast("Nenhum disponível.","error");else{showToast(`Atribuído: ${res.specialist.name}`);const[sp,la,hi]=await Promise.all([sb("specialists?order=name"),sb("last_assigned?select=*"),sb("history?order=created_at.desc&limit=2000")]);if(sp?.length)setSpecs(sp);if(hi?.length)setHist(hi);const lm={};(la||[]).forEach(r=>{lm[r.queue_id]={name:r.spec_name,type:r.type};});setLastMap(lm);}}catch{showToast("Erro.","error");}setSaving(false);}
+  async function rotateSelecao(qId){const pool=selPool(qId);if(!pool.length){showToast("Nenhum com ⭐.","error");return;}if(saving)return;setSaving(true);try{const res=await rpc("assign_next",{p_queue_id:qId,p_type:"selecao",p_user:userName});if(res?.error)showToast("Erro.","error");else{showToast(`Seleção: ${res.specialist.name}`);const[sp,hi]=await Promise.all([sb("specialists?order=name"),sb("history?order=created_at.desc&limit=2000")]);if(sp?.length)setSpecs(sp);if(hi?.length)setHist(hi);}}catch{showToast("Erro.","error");}setSaving(false);}
   async function rotateRecart(qId){if(saving)return;setSaving(true);try{const res=await rpc("assign_recart",{p_queue_id:qId,p_user:userName});if(res?.error)showToast("Nenhum disponível.","error");else{showToast(`Recart. Férias: ${res.specialist.name}`);const sp=await sb("specialists?order=name");if(sp?.length)setSpecs(sp);}}catch{showToast("Erro.","error");}setSaving(false);}
 
   async function addInd(qId,specId){
@@ -164,8 +163,8 @@ export default function App(){
       await sb(`specialists?id=eq.${specId}`,"PATCH",{ind:newInd});
       await sb("history","POST",{spec_name:spec.name,queue_id:qId,type:"indicacao",by_user:userName,date_key:today});
       showToast(`Indicação: ${spec.name}`);
-      const sp=await sb("specialists?order=name");
-      if(sp?.length)setSpecs(sp);
+      const[sp,hi]=await Promise.all([sb("specialists?order=name"),sb("history?order=created_at.desc&limit=2000")]);
+      if(sp?.length)setSpecs(sp);if(hi?.length)setHist(hi);
     }catch(e){console.error(e);showToast("Erro ao registrar indicação.","error");}
   }
   async function addManual(qId,specId){
@@ -173,7 +172,7 @@ export default function App(){
     try{
       await sb("history","POST",{spec_name:spec.name,queue_id:qId,type:"manual",by_user:userName,date_key:today});
       showToast(`+1 Avulso: ${spec.name}`);
-      const hi=await sb("history?order=created_at.desc&limit=1000");
+      const hi=await sb("history?order=created_at.desc&limit=2000");
       if(hi?.length)setHist(hi);
     }catch(e){console.error(e);showToast("Erro ao registrar.","error");}
   }
@@ -184,8 +183,8 @@ export default function App(){
       await sb(`specialists?id=eq.${specId}`,"PATCH",{counts:{...spec.counts,[qId]:(spec.counts?.[qId]||0)+1}});
       await sb("history","POST",{spec_name:spec.name,queue_id:qId,type:"extra_admin",by_user:userName,date_key:today});
       showToast(`+1 extra: ${spec.name}`);
-      const sp=await sb("specialists?order=name");
-      if(sp?.length)setSpecs(sp);
+      const[sp,hi]=await Promise.all([sb("specialists?order=name"),sb("history?order=created_at.desc&limit=2000")]);
+      if(sp?.length)setSpecs(sp);if(hi?.length)setHist(hi);
     }catch{showToast("Erro.","error");}
   }
   async function toggleSel(spec){try{await sb(`specialists?id=eq.${spec.id}`,"PATCH",{selecao:!spec.selecao});const sp=await sb("specialists?order=name");if(sp?.length)setSpecs(sp);}catch{}}
@@ -204,15 +203,12 @@ export default function App(){
     try{
       await sb("day_closings","POST",{closed_date:yKey,closed_label:yLabel,closed_by:userName,summary,total_normal:summary.reduce((a,s)=>a+s.normal,0),total_ind:summary.reduce((a,s)=>a+s.ind,0)});
       const allSpecs=await sb("specialists?select=id");
-      if(allSpecs?.length){
-        await Promise.all(allSpecs.map(s=>sb(`specialists?id=eq.${s.id}`,"PATCH",{counts:{},ind:{}})));
-      }
+      if(allSpecs?.length)await Promise.all(allSpecs.map(s=>sb(`specialists?id=eq.${s.id}`,"PATCH",{counts:{},ind:{}})));
       await sb("last_assigned","DELETE");
       setLastMap({});
-      const pc={};hist.filter(h=>h.date_key===yKey).forEach(h=>{if(!pc[h.queue_id])pc[h.queue_id]={};pc[h.queue_id][h.spec_name]=(pc[h.queue_id][h.spec_name]||0)+1;});
-      setPrevCounts(pc);
       showToast("Novo dia iniciado!");
-      const sp=await sb("specialists?order=name");if(sp?.length)setSpecs(sp);
+      const[sp,hi]=await Promise.all([sb("specialists?order=name"),sb("history?order=created_at.desc&limit=2000")]);
+      if(sp?.length)setSpecs(sp);if(hi?.length)setHist(hi);
     }catch(e){console.error(e);showToast("Erro.","error");}
   }
 
@@ -272,11 +268,11 @@ export default function App(){
 
   const totalActive=specs.filter(c=>c.status==="active").length;
   const totalOff=specs.filter(c=>c.status!=="active").length;
-  const normalToday=hist.filter(h=>h.date_key===today&&h.type==="normal").length;
-  const totalToday=hist.filter(h=>h.date_key===today).length;
   const now2=new Date();const tMonth=now2.getMonth()+1;const tYear=now2.getFullYear();
   const histFilters={"Hoje":h=>h.date_key===today,"Este mês":h=>{const p=h.date_key?.split("/");return p&&parseInt(p[1])===tMonth&&parseInt(p[2])===tYear;},"Este ano":h=>{const p=h.date_key?.split("/");return p&&parseInt(p[2])===tYear;}};
   const filteredHist=hist.filter(histFilters[hFilter]||histFilters["Hoje"]);
+  const normalToday=hist.filter(h=>h.date_key===today&&h.type==="normal").length;
+  const totalToday=hist.filter(h=>h.date_key===today).length;
 
   function QCard({q}){
     const qId=q.id,pool=activePool(qId),spool=selPool(qId),nextN=pool[0]||null,last=lastMap[qId];
@@ -309,7 +305,10 @@ export default function App(){
         <div style={{padding:"0.5rem 0.75rem"}}>
           {allInQ.map((c,i)=>{
             const off=c.status!=="active",isVac=c.status==="vacation",isPaused=c.status==="paused";
-            const credits=c.ind?.[qId]||0,tot=totalOf(c,qId),prev=prevTotal(c.name,qId);
+            const credits=c.ind?.[qId]||0;
+            // Contagem do dia: usa counts do banco (igual ao assign_next)
+            const tot=c.counts?.[qId]||0;
+            const indTot=c.ind?.[qId]||0;
             return(
               <div key={c.id} style={{padding:"8px 6px",borderBottom:i<allInQ.length-1?"1px solid #f3f4f6":"none",opacity:off?0.45:1}}>
                 <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:5}}>
@@ -322,9 +321,8 @@ export default function App(){
                       {c.selecao&&<span title="Seleção especial" style={{fontSize:12}}>⭐</span>}
                     </div>
                     {c.note&&<div style={{fontSize:11,color:"#F59E0B"}}>{c.note}</div>}
-                    {prev>0&&tot===0&&<div style={{fontSize:10,color:"#aaa"}}>ontem: {prev}</div>}
                   </div>
-                  <span style={{padding:"2px 10px",borderRadius:20,fontSize:12,fontWeight:800,background:q.light,color:q.color,flexShrink:0}}>{tot}</span>
+                  <span style={{padding:"2px 10px",borderRadius:20,fontSize:12,fontWeight:800,background:q.light,color:q.color,flexShrink:0}}>{tot+indTot}</span>
                 </div>
                 <div style={{display:"flex",gap:4,alignItems:"center",paddingLeft:36,flexWrap:"wrap"}}>
                   <button style={{padding:"3px 9px",borderRadius:8,border:"none",background:c.selecao?"#FEF3C7":"#f3f4f6",cursor:"pointer",fontSize:11,fontWeight:600,color:c.selecao?"#B45309":"#888"}} onClick={()=>toggleSel(c)}>⭐ Seleção</button>
@@ -573,7 +571,7 @@ export default function App(){
               <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
                 <input type="date" style={{...C.inp,maxWidth:160,padding:"6px 10px"}} value={cleanDate} onChange={e=>setCleanDate(e.target.value)}/>
                 {cleanDate&&<div style={{fontSize:11,color:"#888"}}>📅 {toBR(cleanDate)}</div>}
-                <button style={{padding:"6px 12px",borderRadius:8,border:"1px solid #FECACA",background:"#FEE2E2",color:"#EF4444",fontSize:12,fontWeight:600,cursor:"pointer"}} onClick={async()=>{if(!cleanDate){showToast("Selecione uma data","error");return;}const dk=toBR(cleanDate);if(!confirm(`Apagar todos os registros de ${dk}?`))return;await sb(`history?date_key=eq.${dk}`,"DELETE");const hi=await sb("history?order=created_at.desc&limit=1000");if(hi)setHist(hi);setCleanDate("");setAdminOpen(false);showToast(`Registros de ${dk} apagados!`);}}>Apagar dia</button>
+                <button style={{padding:"6px 12px",borderRadius:8,border:"1px solid #FECACA",background:"#FEE2E2",color:"#EF4444",fontSize:12,fontWeight:600,cursor:"pointer"}} onClick={async()=>{if(!cleanDate){showToast("Selecione uma data","error");return;}const dk=toBR(cleanDate);if(!confirm(`Apagar todos os registros de ${dk}?`))return;await sb(`history?date_key=eq.${dk}`,"DELETE");const hi=await sb("history?order=created_at.desc&limit=2000");if(hi)setHist(hi);setCleanDate("");setAdminOpen(false);showToast(`Registros de ${dk} apagados!`);}}>Apagar dia</button>
               </div>
             </div>
             <button style={{padding:"8px 12px",borderRadius:8,border:"2px solid #EF4444",background:"#FEE2E2",color:"#EF4444",fontSize:12,fontWeight:700,cursor:"pointer",textAlign:"left"}} onClick={async()=>{if(!confirm("⚠️ ATENÇÃO: Isso vai apagar TODOS os dados. Tem certeza?"))return;await Promise.all([sb("history?id=gt.0","DELETE"),sb("events?id=gt.0","DELETE"),sb("meeting_bookings?id=gt.0","DELETE"),sb("presence_calendar?id=gt.0","DELETE"),sb("day_closings?id=gt.0","DELETE"),sb("last_assigned?queue_id=neq.","DELETE")]);const allSp=await sb("specialists?select=id");if(allSp?.length)await Promise.all(allSp.map(s=>sb(`specialists?id=eq.${s.id}`,"PATCH",{counts:{},ind:{}})));setHist([]);setEvts([]);setBookings([]);setPresence([]);setDayLog([]);setLastMap({});const sp=await sb("specialists?order=name");if(sp?.length)setSpecs(sp);setAdminOpen(false);showToast("Todos os dados foram apagados!");}}>⚠️ Apagar TUDO (reset completo)</button>
@@ -606,7 +604,7 @@ export default function App(){
           const inQ=[...specs.filter(c=>c.queues.includes(q.id))].sort((a,b)=>a.name.localeCompare(b.name,"pt"));
           if(!inQ.length)return null;
           const firstToday=hist.filter(h=>h.queue_id===q.id&&h.date_key===today&&h.type==="normal").sort((a,b)=>new Date(a.created_at)-new Date(b.created_at))[0];
-          const totalSetor=inQ.reduce((acc,c)=>acc+hist.filter(h=>h.spec_name===c.name&&h.queue_id===q.id&&h.date_key===today).length,0);
+          const totalSetor=inQ.reduce((acc,c)=>acc+(c.counts?.[q.id]||0)+(c.ind?.[q.id]||0),0);
           return(
             <div key={q.id} style={{...C.card,padding:0,overflow:"hidden",marginBottom:14}}>
               <div style={{padding:"8px 16px",background:q.color,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
@@ -619,8 +617,6 @@ export default function App(){
                     <th style={{padding:"6px 16px",fontSize:11,fontWeight:700,color:"#555",textAlign:"left",width:"30%"}}>Especialista</th>
                     <th style={{padding:"6px 8px",fontSize:11,fontWeight:700,color:"#7C3AED",textAlign:"center"}}>Normal</th>
                     <th style={{padding:"6px 8px",fontSize:11,fontWeight:700,color:"#F59E0B",textAlign:"center"}}>Indicação</th>
-                    <th style={{padding:"6px 8px",fontSize:11,fontWeight:700,color:"#10B981",textAlign:"center"}}>Recart.</th>
-                    <th style={{padding:"6px 8px",fontSize:11,fontWeight:700,color:"#4F46E5",textAlign:"center"}}>+1 Avulso</th>
                     <th style={{padding:"6px 16px",fontSize:11,fontWeight:700,color:"#222",textAlign:"center"}}>Total dia</th>
                     <th style={{padding:"6px 16px",fontSize:11,fontWeight:700,color:"#888",textAlign:"left"}}>Observação</th>
                   </tr>
@@ -628,12 +624,9 @@ export default function App(){
                 <tbody>
                   {inQ.map((c,i)=>{
                     const isVac=c.status==="vacation",isPaused=c.status==="paused",off=c.status!=="active";
-                    const hToday=hist.filter(h=>h.spec_name===c.name&&h.queue_id===q.id&&h.date_key===today);
-                    const nNormal=hToday.filter(h=>h.type==="normal").length;
-                    const nInd=hToday.filter(h=>h.type==="indicacao"||h.type==="selecao").length;
-                    const nRT=hToday.filter(h=>h.type==="recart_ferias").length;
-                    const nAvulso=hToday.filter(h=>h.type==="manual"||h.type==="extra_admin").length;
-                    const total=hToday.length;
+                    const nNormal=c.counts?.[q.id]||0;
+                    const nInd=c.ind?.[q.id]||0;
+                    const total=nNormal+nInd;
                     const rowBg=off?"#FFF0F0":i%2===0?"#fff":"#fafafa";
                     const textColor=off?"#cc0000":"#222";
                     return(
@@ -641,8 +634,6 @@ export default function App(){
                         <td style={{padding:"8px 16px"}}><div style={{display:"flex",alignItems:"center",gap:8}}><div style={{width:24,height:24,borderRadius:"50%",background:off?"#fecaca":q.light,display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,fontWeight:700,color:off?"#cc0000":q.color,flexShrink:0}}>{initials(c.name)}</div><span style={{fontWeight:600,fontSize:13,color:textColor}}>{c.name}</span>{c.selecao&&!off&&<span style={{fontSize:11}}>⭐</span>}{isVac&&<span style={{fontSize:10,background:"#fecaca",color:"#cc0000",borderRadius:20,padding:"1px 7px",fontWeight:600}}>🌴 Férias</span>}{isPaused&&<span style={{fontSize:10,background:"#fecaca",color:"#cc0000",borderRadius:20,padding:"1px 7px",fontWeight:600}}>⏸ Pausa</span>}</div></td>
                         <td style={{padding:"8px",textAlign:"center"}}><span style={{fontWeight:700,fontSize:14,color:nNormal>0?"#7C3AED":"#ddd"}}>{nNormal||"—"}</span></td>
                         <td style={{padding:"8px",textAlign:"center"}}><span style={{fontWeight:700,fontSize:14,color:nInd>0?"#F59E0B":"#ddd"}}>{nInd||"—"}</span></td>
-                        <td style={{padding:"8px",textAlign:"center"}}><span style={{fontWeight:700,fontSize:14,color:nRT>0?"#10B981":"#ddd"}}>{nRT||"—"}</span></td>
-                        <td style={{padding:"8px",textAlign:"center"}}><span style={{fontWeight:700,fontSize:14,color:nAvulso>0?"#4F46E5":"#ddd"}}>{nAvulso||"—"}</span></td>
                         <td style={{padding:"8px 16px",textAlign:"center"}}><span style={{fontWeight:800,fontSize:15,color:total>0?"#222":"#ddd"}}>{total||"—"}</span></td>
                         <td style={{padding:"8px 16px",fontSize:12,color:off?"#cc0000":"#F59E0B",fontWeight:500}}><div style={{display:"flex",alignItems:"center",gap:6}}><span style={{flex:1}}>{c.note||""}</span>{c.note&&<button style={{background:"none",border:"none",cursor:"pointer",fontSize:12,color:"#aaa",padding:"0 2px"}} onClick={()=>saveNote(c,"")}>✕</button>}<button style={{background:"none",border:"none",cursor:"pointer",fontSize:12,color:"#aaa",padding:"0 2px"}} onClick={()=>{setMTxt(c.note||"");setModal({type:"nota",spec:c});}}>✏️</button></div></td>
                       </tr>
@@ -681,7 +672,7 @@ export default function App(){
       {tab==="Salas"&&<SalasTab/>}
       {tab==="Presença"&&<PresencaTab/>}
       {tab==="Pausas"&&(<div style={C.card}><div style={{fontWeight:700,marginBottom:14,fontSize:14}}>Registro de Pausas e Anotações</div>{!evts.length&&<div style={{fontSize:13,color:"#888",textAlign:"center",padding:"2rem"}}>Nenhum registro ainda.</div>}{evts.map(e=>{const meta={pausa_inicio:{l:"Pausa",bg:"#FEF3C7",col:"#B45309",icon:"⏸"},pausa_fim:{l:"Retorno",bg:"#D1FAE5",col:"#10B981",icon:"▶️"},nota:{l:"Nota",bg:"#EDE9FE",col:"#7C3AED",icon:"📝"}};const m=meta[e.type]||{l:e.type,bg:"#f3f4f6",col:"#555",icon:"•"};return(<div key={e.id} style={{display:"flex",alignItems:"flex-start",gap:10,padding:"10px 0",borderBottom:"1px solid #f3f4f6"}}><div style={{width:32,height:32,borderRadius:10,background:m.bg,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,flexShrink:0}}>{m.icon}</div><div style={{flex:1}}><div style={{display:"flex",justifyContent:"space-between"}}><div><span style={{fontWeight:700,fontSize:13}}>{e.spec_name}</span><span style={{marginLeft:8,padding:"1px 8px",borderRadius:20,fontSize:11,fontWeight:600,background:m.bg,color:m.col}}>{m.l}</span></div><span style={{fontSize:11,color:"#aaa"}}>{new Date(e.created_at).toLocaleString("pt-BR")}</span></div>{e.detail&&e.detail!=="—"&&<div style={{fontSize:12,color:"#888",marginTop:3}}>{e.detail}</div>}{e.by_user&&<div style={{fontSize:11,color:"#7C3AED",marginTop:3}}>👤 {e.by_user}</div>}</div></div>);})}</div>)}
-      {tab==="Histórico"&&(<div><div style={{display:"flex",gap:6,marginBottom:12,flexWrap:"wrap",alignItems:"center"}}>{Object.keys(histFilters).map(hf=><button key={hf} style={{padding:"7px 16px",borderRadius:10,border:`2px solid ${hFilter===hf?"#7C3AED":"#e5e7eb"}`,background:hFilter===hf?"#EDE9FE":"#fff",color:hFilter===hf?"#7C3AED":"#888",fontSize:13,fontWeight:hFilter===hf?700:400,cursor:"pointer"}} onClick={()=>setHFilter(hf)}>{hf}</button>)}<span style={{marginLeft:"auto",fontSize:13,color:"#888",fontWeight:500}}>{filteredHist.length} registros</span></div><div style={C.card}>{!filteredHist.length&&<div style={{fontSize:13,color:"#888",textAlign:"center",padding:"2rem"}}>Nenhum registro.</div>}{filteredHist.map((h,i)=>{const qInfo=QUEUES.find(q=>q.id===h.queue_id);return(<div key={h.id} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 0",borderBottom:"1px solid #f3f4f6",flexWrap:"wrap"}}><span style={{fontSize:11,color:"#ccc",minWidth:24,textAlign:"right",fontWeight:600}}>{filteredHist.length-i}</span><span style={{padding:"2px 10px",borderRadius:20,fontSize:11,fontWeight:700,background:qInfo?.light||"#f3f4f6",color:qInfo?.color||"#555"}}>{qInfo?.icon} {qInfo?.label}</span>{h.type!=="normal"&&<span style={{padding:"2px 10px",borderRadius:20,fontSize:11,fontWeight:700,background:"#FEF3C7",color:"#B45309"}}>{h.type}</span>}<span style={{flex:1,fontSize:13,fontWeight:700}}>{h.spec_name}</span>{h.by_user&&<span style={{fontSize:11,color:"#7C3AED",background:"#EDE9FE",padding:"1px 8px",borderRadius:20,fontWeight:600}}>👤 {h.by_user}</span>}<span style={{fontSize:11,color:"#aaa"}}>{new Date(h.created_at).toLocaleString("pt-BR")}</span>{adminOk&&<button style={{background:"#FEE2E2",border:"none",borderRadius:6,padding:"2px 8px",cursor:"pointer",fontSize:11,color:"#EF4444",flexShrink:0}} onClick={async()=>{await sb(`history?id=eq.${h.id}`,"DELETE");const [hi2,sp]=await Promise.all([sb("history?order=created_at.desc&limit=1000"),sb("specialists?order=name")]);if(hi2)setHist(hi2);if(sp)setSpecs(sp);showToast("Registro removido!");}}>✕</button>}</div>);})}</div>{dayLog.length>0&&(<><div style={{fontWeight:700,fontSize:14,margin:"20px 0 12px"}}>☀️ Fechamentos de dia</div>{dayLog.map(d=>(<div key={d.id} style={{...C.card,borderLeft:"4px solid #7C3AED"}}><div style={{display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:8}}><div><div style={{fontWeight:700,fontSize:14,textTransform:"capitalize"}}>{d.closed_label}</div><div style={{fontSize:12,color:"#888",marginTop:2}}>👤 {d.closed_by} · {new Date(d.created_at).toLocaleString("pt-BR")}</div></div><div style={{display:"flex",gap:12}}><div style={{textAlign:"center",background:"#EDE9FE",borderRadius:10,padding:"6px 14px"}}><div style={{fontSize:11,color:"#7C3AED",fontWeight:600}}>Normal</div><div style={{fontSize:22,fontWeight:800,color:"#7C3AED"}}>{d.total_normal}</div></div><div style={{textAlign:"center",background:"#FEF3C7",borderRadius:10,padding:"6px 14px"}}><div style={{fontSize:11,color:"#B45309",fontWeight:600}}>Indicações</div><div style={{fontSize:22,fontWeight:800,color:"#B45309"}}>{d.total_ind}</div></div></div></div>{d.summary?.length>0&&<div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:10}}>{d.summary.map(sm=>{const qi=QUEUES.find(q=>q.label===sm.queue);return<div key={sm.queue} style={{padding:"4px 12px",borderRadius:20,fontSize:12,fontWeight:600,background:qi?.light||"#f3f4f6",color:qi?.color||"#555"}}>{qi?.icon} {sm.queue} · {sm.normal}N{sm.ind>0?` · ${sm.ind}I`:""}</div>;})}</div>}</div>))}</>)}</div>)}
+      {tab==="Histórico"&&(<div><div style={{display:"flex",gap:6,marginBottom:12,flexWrap:"wrap",alignItems:"center"}}>{Object.keys(histFilters).map(hf=><button key={hf} style={{padding:"7px 16px",borderRadius:10,border:`2px solid ${hFilter===hf?"#7C3AED":"#e5e7eb"}`,background:hFilter===hf?"#EDE9FE":"#fff",color:hFilter===hf?"#7C3AED":"#888",fontSize:13,fontWeight:hFilter===hf?700:400,cursor:"pointer"}} onClick={()=>setHFilter(hf)}>{hf}</button>)}<span style={{marginLeft:"auto",fontSize:13,color:"#888",fontWeight:500}}>{filteredHist.length} registros</span></div><div style={C.card}>{!filteredHist.length&&<div style={{fontSize:13,color:"#888",textAlign:"center",padding:"2rem"}}>Nenhum registro.</div>}{filteredHist.map((h,i)=>{const qInfo=QUEUES.find(q=>q.id===h.queue_id);return(<div key={h.id} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 0",borderBottom:"1px solid #f3f4f6",flexWrap:"wrap"}}><span style={{fontSize:11,color:"#ccc",minWidth:24,textAlign:"right",fontWeight:600}}>{filteredHist.length-i}</span><span style={{padding:"2px 10px",borderRadius:20,fontSize:11,fontWeight:700,background:qInfo?.light||"#f3f4f6",color:qInfo?.color||"#555"}}>{qInfo?.icon} {qInfo?.label}</span>{h.type!=="normal"&&<span style={{padding:"2px 10px",borderRadius:20,fontSize:11,fontWeight:700,background:"#FEF3C7",color:"#B45309"}}>{h.type}</span>}<span style={{flex:1,fontSize:13,fontWeight:700}}>{h.spec_name}</span>{h.by_user&&<span style={{fontSize:11,color:"#7C3AED",background:"#EDE9FE",padding:"1px 8px",borderRadius:20,fontWeight:600}}>👤 {h.by_user}</span>}<span style={{fontSize:11,color:"#aaa"}}>{new Date(h.created_at).toLocaleString("pt-BR")}</span>{adminOk&&<button style={{background:"#FEE2E2",border:"none",borderRadius:6,padding:"2px 8px",cursor:"pointer",fontSize:11,color:"#EF4444",flexShrink:0}} onClick={async()=>{await sb(`history?id=eq.${h.id}`,"DELETE");const[hi2,sp]=await Promise.all([sb("history?order=created_at.desc&limit=2000"),sb("specialists?order=name")]);if(hi2)setHist(hi2);if(sp)setSpecs(sp);showToast("Registro removido!");}}>✕</button>}</div>);})}</div>{dayLog.length>0&&(<><div style={{fontWeight:700,fontSize:14,margin:"20px 0 12px"}}>☀️ Fechamentos de dia</div>{dayLog.map(d=>(<div key={d.id} style={{...C.card,borderLeft:"4px solid #7C3AED"}}><div style={{display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:8}}><div><div style={{fontWeight:700,fontSize:14,textTransform:"capitalize"}}>{d.closed_label}</div><div style={{fontSize:12,color:"#888",marginTop:2}}>👤 {d.closed_by} · {new Date(d.created_at).toLocaleString("pt-BR")}</div></div><div style={{display:"flex",gap:12}}><div style={{textAlign:"center",background:"#EDE9FE",borderRadius:10,padding:"6px 14px"}}><div style={{fontSize:11,color:"#7C3AED",fontWeight:600}}>Normal</div><div style={{fontSize:22,fontWeight:800,color:"#7C3AED"}}>{d.total_normal}</div></div><div style={{textAlign:"center",background:"#FEF3C7",borderRadius:10,padding:"6px 14px"}}><div style={{fontSize:11,color:"#B45309",fontWeight:600}}>Indicações</div><div style={{fontSize:22,fontWeight:800,color:"#B45309"}}>{d.total_ind}</div></div></div></div>{d.summary?.length>0&&<div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:10}}>{d.summary.map(sm=>{const qi=QUEUES.find(q=>q.label===sm.queue);return<div key={sm.queue} style={{padding:"4px 12px",borderRadius:20,fontSize:12,fontWeight:600,background:qi?.light||"#f3f4f6",color:qi?.color||"#555"}}>{qi?.icon} {sm.queue} · {sm.normal}N{sm.ind>0?` · ${sm.ind}I`:""}</div>;})}</div>}</div>))}</>)}</div>)}
     </div>
   );
 }
