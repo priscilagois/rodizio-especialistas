@@ -10,7 +10,8 @@ const QUEUES=[
 const MONTHS=["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
 const WEEKDAYS=["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"];
 const RCOLS=["#7C3AED","#0EA5E9","#10B981","#F59E0B","#EF4444"];
-const ADMIN_NAMES=["priscila","marcelo","pedro","roberta"];
+const ADMIN_NAMES=["Priscila","Marcelo","Pedro","Roberta"];
+const SDR_NAMES=["Amanda","Elisa","Gabriella","Lorena"];
 const ADMIN_PIN="Orange2026";
 const TABS=[{id:"Painel",icon:"📊"},{id:"Rodízio",icon:"🔄"},{id:"Controle",icon:"📅"},{id:"Pausas",icon:"⏸"},{id:"Histórico",icon:"📋"},{id:"Salas",icon:"🚪"},{id:"Presença",icon:"📆"}];
 const INIT_SPECS=[
@@ -51,7 +52,8 @@ const todayISO=()=>new Date().toISOString().split("T")[0];
 const toBR=d=>d?d.split("-").reverse().join("/"):"";
 const yesterdayKey=()=>{const d=new Date();d.setDate(d.getDate()-1);return d.toLocaleDateString("pt-BR");};
 const initials=n=>n.replace(/[^A-Za-záéíóúÁÉÍÓÚ ]/g,"").trim().split(" ").slice(0,2).map(w=>w[0]?.toUpperCase()||"").join("");
-const isAdmin=name=>ADMIN_NAMES.includes(name?.toLowerCase().trim());
+const isAdmin=name=>ADMIN_NAMES.some(n=>n.toLowerCase()===(name||"").toLowerCase().trim());
+function getCanonicalName(input){if(!input)return null;const norm=input.trim().toLowerCase();const all=[...ADMIN_NAMES,...SDR_NAMES];return all.find(n=>n.toLowerCase()===norm)||null;}
 function getWorkdays(y,m){const d=[],dt=new Date(y,m,1);while(dt.getMonth()===m){if(dt.getDay()!==0&&dt.getDay()!==6)d.push(new Date(dt));dt.setDate(dt.getDate()+1);}return d;}
 export default function App(){
   const [specs,setSpecs]=useState(INIT_SPECS);
@@ -95,10 +97,11 @@ export default function App(){
   const [userIsAdmin,setUserIsAdmin]=useState(false);
   useEffect(()=>{
     const stored=localStorage.getItem("rodizio_user");
-    const storedPin=localStorage.getItem("rodizio_pin_"+stored);
-    if(stored&&storedPin){setTmpName(stored);setAuthStep("pin_enter");}
-    else if(stored&&isAdmin(stored)){setUserName(stored);setUserIsAdmin(true);setAdminOk(true);setAuthStep("done");}
-    else{setAuthStep("name");}
+    const canonical=stored?getCanonicalName(stored):null;
+    if(stored&&!canonical){localStorage.removeItem("rodizio_user");setAuthStep("name");return;}
+    if(canonical&&isAdmin(canonical)){setUserName(canonical);setUserIsAdmin(true);setAdminOk(true);setAuthStep("done");return;}
+    if(canonical){const storedPin=localStorage.getItem("rodizio_pin_"+canonical);setTmpName(canonical);setAuthStep(storedPin?"pin_enter":"pin_create");return;}
+    setAuthStep("name");
   },[]);
   useEffect(()=>{
     if(authStep!=="done")return;
@@ -172,14 +175,14 @@ export default function App(){
   function histOf(c,qId,type=null){
     return hist.filter(h=>h.spec_name===c.name&&h.queue_id===qId&&h.date_key===today&&(type?h.type===type:true)).length;
   }
-  function handleNameSubmit(){const name=tmpName.trim();if(!name)return;if(isAdmin(name)){setAuthStep("pin_enter_admin");return;}const sp=localStorage.getItem("rodizio_pin_"+name);setAuthStep(sp?"pin_enter":"pin_create");}
+  function handleNameSubmit(){const canonical=getCanonicalName(tmpName);if(!canonical){showToast("Nome não cadastrado. Fale com o administrador.","error");return;}setTmpName(canonical);if(isAdmin(canonical)){setAuthStep("pin_enter_admin");return;}const sp=localStorage.getItem("rodizio_pin_"+canonical);setAuthStep(sp?"pin_enter":"pin_create");}
   function handleAdminPinSubmit(){if(tmpPin===ADMIN_PIN){const name=tmpName.trim();localStorage.setItem("rodizio_user",name);setUserName(name);setUserIsAdmin(true);setAdminOk(true);setAuthStep("done");setTmpPin("");}else{showToast("PIN incorreto","error");setTmpPin("");}}
   function handlePinCreate(){if(tmpPin.length<4){showToast("PIN deve ter ao menos 4 caracteres","error");return;}if(tmpPin!==tmpPin2){showToast("PINs não coincidem","error");return;}const name=tmpName.trim();localStorage.setItem("rodizio_pin_"+name,tmpPin);localStorage.setItem("rodizio_user",name);setUserName(name);setUserIsAdmin(false);setAdminOk(false);setAuthStep("done");setTmpPin("");setTmpPin2("");}
   function handlePinEnter(){const name=tmpName.trim(),stored=localStorage.getItem("rodizio_pin_"+name);if(tmpPin===stored){localStorage.setItem("rodizio_user",name);setUserName(name);setUserIsAdmin(false);setAdminOk(false);setAuthStep("done");setTmpPin("");}else{showToast("PIN incorreto","error");setTmpPin("");}}
   function handleLogout(){localStorage.removeItem("rodizio_user");setUserName("");setTmpName("");setTmpPin("");setTmpPin2("");setUserIsAdmin(false);setAdminOk(false);setAuthStep("name");}
   async function rotateNormal(qId){if(saving)return;setSaving(true);try{const res=await rpc("assign_next",{p_queue_id:qId,p_type:"normal",p_user:userName});if(res?.error)showToast("Nenhum disponível.","error");else{showToast(`Atribuído: ${res.specialist.name}`);const[sp,la,hi]=await Promise.all([sb("specialists?order=name"),sb("last_assigned?select=*"),sb("history?order=created_at.desc&limit=2000")]);if(sp?.length)setSpecs(sp);if(hi?.length)setHist(hi);const lm={};(la||[]).forEach(r=>{lm[r.queue_id]={name:r.spec_name,type:r.type};});setLastMap(lm);}}catch{showToast("Erro.","error");}setSaving(false);}
-  async function rotateSelecao(qId){const pool=selPool(qId);if(!pool.length){showToast("Nenhum com ⭐.","error");return;}if(saving)return;setSaving(true);try{const res=await rpc("assign_next",{p_queue_id:qId,p_type:"selecao",p_user:userName});if(res?.error)showToast("Erro.","error");else{showToast(`Seleção: ${res.specialist.name}`);const[sp,hi]=await Promise.all([sb("specialists?order=name"),sb("history?order=created_at.desc&limit=2000")]);if(sp?.length)setSpecs(sp);if(hi?.length)setHist(hi);}}catch{showToast("Erro.","error");}setSaving(false);}
-  async function rotateRecart(qId){if(saving)return;setSaving(true);try{const res=await rpc("assign_recart",{p_queue_id:qId,p_user:userName});if(res?.error)showToast("Nenhum disponível.","error");else{showToast(`Recart. Férias: ${res.specialist.name}`);const sp=await sb("specialists?order=name");if(sp?.length)setSpecs(sp);}}catch{showToast("Erro.","error");}setSaving(false);}
+  async function rotateSelecao(qId){const pool=selPool(qId);if(!pool.length){showToast("Nenhum com ⭐.","error");return;}if(saving)return;setSaving(true);try{const res=await rpc("assign_next",{p_queue_id:qId,p_type:"selecao",p_user:userName});if(res?.error)showToast("Erro.","error");else{showToast(`Seleção: ${res.specialist.name}`);const[sp,la,hi]=await Promise.all([sb("specialists?order=name"),sb("last_assigned?select=*"),sb("history?order=created_at.desc&limit=2000")]);if(sp?.length)setSpecs(sp);if(hi?.length)setHist(hi);const lm={};(la||[]).forEach(r=>{lm[r.queue_id]={name:r.spec_name,type:r.type};});setLastMap(lm);}}catch{showToast("Erro.","error");}setSaving(false);}
+  async function rotateRecart(qId){if(saving)return;setSaving(true);try{const res=await rpc("assign_recart",{p_queue_id:qId,p_user:userName});if(res?.error)showToast("Nenhum disponível.","error");else{showToast(`Recart. Férias: ${res.specialist.name}`);const[sp,la,hi]=await Promise.all([sb("specialists?order=name"),sb("last_assigned?select=*"),sb("history?order=created_at.desc&limit=2000")]);if(sp?.length)setSpecs(sp);if(hi?.length)setHist(hi);const lm={};(la||[]).forEach(r=>{lm[r.queue_id]={name:r.spec_name,type:r.type};});setLastMap(lm);}}catch{showToast("Erro.","error");}setSaving(false);}
   async function addInd(qId,specId){
     const spec=specs.find(c=>c.id===specId);if(!spec)return;
     try{
@@ -194,10 +197,12 @@ export default function App(){
   async function addManual(qId,specId){
     const spec=specs.find(c=>c.id===specId);if(!spec)return;
     try{
+      const newCounts={...spec.counts,[qId]:(spec.counts?.[qId]||0)+1};
+      await sb(`specialists?id=eq.${specId}`,"PATCH",{counts:newCounts});
       await sb("history","POST",{spec_name:spec.name,queue_id:qId,type:"manual",by_user:userName,date_key:today});
       showToast(`+1 Avulso: ${spec.name}`);
-      const hi=await sb("history?order=created_at.desc&limit=2000");
-      if(hi?.length)setHist(hi);
+      const[sp,hi]=await Promise.all([sb("specialists?order=name"),sb("history?order=created_at.desc&limit=2000")]);
+      if(sp?.length)setSpecs(sp);if(hi?.length)setHist(hi);
     }catch(e){console.error(e);showToast("Erro ao registrar.","error");}
   }
   async function addExtraAdmin(qId,specId){
@@ -222,7 +227,7 @@ export default function App(){
     const y=new Date();y.setDate(y.getDate()-1);
     const yKey=y.toLocaleDateString("pt-BR");
     const yLabel=y.toLocaleDateString("pt-BR",{weekday:"long",day:"2-digit",month:"2-digit",year:"numeric"});
-    const summary=QUEUES.map(q=>{const e=hist.filter(h=>h.date_key===yKey&&h.queue_id===q.id);return{queue:q.label,normal:e.filter(h=>h.type==="normal").length,ind:e.filter(h=>h.type!=="normal").length,total:e.length};}).filter(s=>s.total>0);
+    const summary=QUEUES.map(q=>{const e=hist.filter(h=>h.date_key===yKey&&h.queue_id===q.id);return{queue:q.label,normal:e.filter(h=>h.type==="normal"||h.type==="manual").length,ind:e.filter(h=>h.type==="indicacao"||h.type==="selecao").length,total:e.length};}).filter(s=>s.total>0);
     try{
       await sb("day_closings","POST",{closed_date:yKey,closed_label:yLabel,closed_by:userName,summary,total_normal:summary.reduce((a,s)=>a+s.normal,0),total_ind:summary.reduce((a,s)=>a+s.ind,0)});
       const allSpecs=await sb("specialists?select=id");
@@ -277,7 +282,7 @@ export default function App(){
     btnP:{cursor:"pointer",padding:"9px 20px",borderRadius:10,border:"none",background:"linear-gradient(135deg,#7C3AED,#4F46E5)",color:"#fff",fontSize:13,fontWeight:600},
     btnS:{cursor:"pointer",padding:"9px 16px",borderRadius:10,border:"1.5px solid #e5e7eb",background:"#fff",fontSize:13,color:"#555"}
   };
-  if(authStep==="name"||authStep==="idle"){return(<div style={{minHeight:"100vh",background:"linear-gradient(135deg,#7C3AED,#4F46E5)",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:f}}><div style={{background:"#fff",borderRadius:20,padding:"2.5rem",width:340,textAlign:"center"}}><div style={{fontSize:40,marginBottom:12}}>👋</div><div style={{fontWeight:700,fontSize:20,marginBottom:6}}>Bem-vindo!</div><div style={{fontSize:14,color:"#888",marginBottom:24}}>Digite seu nome para continuar</div><input style={{width:"100%",boxSizing:"border-box",padding:"12px 16px",borderRadius:10,border:"2px solid #e5e7eb",fontSize:15,marginBottom:16,outline:"none",color:"#222"}} placeholder="Seu nome" value={tmpName} onChange={e=>setTmpName(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleNameSubmit()} autoFocus/><button style={{width:"100%",padding:"12px",borderRadius:10,border:"none",background:"linear-gradient(135deg,#7C3AED,#4F46E5)",color:"#fff",fontSize:15,fontWeight:600,cursor:"pointer"}} onClick={handleNameSubmit}>Continuar</button></div></div>);}
+  if(authStep==="name"||authStep==="idle"){return(<div style={{minHeight:"100vh",background:"linear-gradient(135deg,#7C3AED,#4F46E5)",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:f}}><div style={{background:"#fff",borderRadius:20,padding:"2.5rem",width:340,textAlign:"center"}}><div style={{fontSize:40,marginBottom:12}}>👋</div><div style={{fontWeight:700,fontSize:20,marginBottom:6}}>Bem-vindo!</div><div style={{fontSize:14,color:"#888",marginBottom:24}}>Digite seu nome para continuar</div><input style={{width:"100%",boxSizing:"border-box",padding:"12px 16px",borderRadius:10,border:"2px solid #e5e7eb",fontSize:15,marginBottom:16,outline:"none",color:"#222"}} placeholder="Seu nome" value={tmpName} onChange={e=>setTmpName(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleNameSubmit()} autoFocus/>{toast&&<div style={{marginBottom:12,padding:"8px",background:"#FEE2E2",color:"#EF4444",borderRadius:8,fontSize:13}}>{toast.msg}</div>}<button style={{width:"100%",padding:"12px",borderRadius:10,border:"none",background:"linear-gradient(135deg,#7C3AED,#4F46E5)",color:"#fff",fontSize:15,fontWeight:600,cursor:"pointer"}} onClick={handleNameSubmit}>Continuar</button></div></div>);}
   if(authStep==="pin_enter_admin"){return(<div style={{minHeight:"100vh",background:"linear-gradient(135deg,#7C3AED,#4F46E5)",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:f}}><div style={{background:"#fff",borderRadius:20,padding:"2.5rem",width:340,textAlign:"center"}}><div style={{fontSize:40,marginBottom:12}}>🔐</div><div style={{fontWeight:700,fontSize:20,marginBottom:6}}>Olá, {tmpName}!</div><div style={{fontSize:14,color:"#888",marginBottom:24}}>Digite o PIN de administrador</div><input type="password" style={{width:"100%",boxSizing:"border-box",padding:"12px 16px",borderRadius:10,border:"2px solid #e5e7eb",fontSize:15,marginBottom:16,outline:"none",color:"#222",textAlign:"center",letterSpacing:4}} placeholder="••••••••" value={tmpPin} onChange={e=>setTmpPin(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleAdminPinSubmit()} autoFocus/>{toast&&<div style={{marginBottom:12,padding:"8px",background:"#FEE2E2",color:"#EF4444",borderRadius:8,fontSize:13}}>{toast.msg}</div>}<button style={{width:"100%",padding:"12px",borderRadius:10,border:"none",background:"linear-gradient(135deg,#7C3AED,#4F46E5)",color:"#fff",fontSize:15,fontWeight:600,cursor:"pointer",marginBottom:10}} onClick={handleAdminPinSubmit}>Entrar</button><button style={{background:"none",border:"none",color:"#aaa",fontSize:13,cursor:"pointer"}} onClick={()=>{setAuthStep("name");setTmpPin("");}}>← Voltar</button></div></div>);}
   if(authStep==="pin_create"){return(<div style={{minHeight:"100vh",background:"linear-gradient(135deg,#7C3AED,#4F46E5)",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:f}}><div style={{background:"#fff",borderRadius:20,padding:"2.5rem",width:340,textAlign:"center"}}><div style={{fontSize:40,marginBottom:12}}>🔑</div><div style={{fontWeight:700,fontSize:20,marginBottom:6}}>Olá, {tmpName}!</div><div style={{fontSize:14,color:"#888",marginBottom:24}}>Crie um PIN para proteger seu acesso</div><input type="password" style={{width:"100%",boxSizing:"border-box",padding:"12px 16px",borderRadius:10,border:"2px solid #e5e7eb",fontSize:15,marginBottom:12,outline:"none",color:"#222",textAlign:"center",letterSpacing:4}} placeholder="Criar PIN" value={tmpPin} onChange={e=>setTmpPin(e.target.value)} autoFocus/><input type="password" style={{width:"100%",boxSizing:"border-box",padding:"12px 16px",borderRadius:10,border:"2px solid #e5e7eb",fontSize:15,marginBottom:16,outline:"none",color:"#222",textAlign:"center",letterSpacing:4}} placeholder="Confirmar PIN" value={tmpPin2} onChange={e=>setTmpPin2(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handlePinCreate()}/>{toast&&<div style={{marginBottom:12,padding:"8px",background:"#FEE2E2",color:"#EF4444",borderRadius:8,fontSize:13}}>{toast.msg}</div>}<button style={{width:"100%",padding:"12px",borderRadius:10,border:"none",background:"linear-gradient(135deg,#7C3AED,#4F46E5)",color:"#fff",fontSize:15,fontWeight:600,cursor:"pointer",marginBottom:10}} onClick={handlePinCreate}>Criar PIN e entrar</button><button style={{background:"none",border:"none",color:"#aaa",fontSize:13,cursor:"pointer"}} onClick={()=>{setAuthStep("name");setTmpPin("");setTmpPin2("");}}>← Voltar</button></div></div>);}
   if(authStep==="pin_enter"){return(<div style={{minHeight:"100vh",background:"linear-gradient(135deg,#7C3AED,#4F46E5)",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:f}}><div style={{background:"#fff",borderRadius:20,padding:"2.5rem",width:340,textAlign:"center"}}><div style={{fontSize:40,marginBottom:12}}>🔒</div><div style={{fontWeight:700,fontSize:20,marginBottom:6}}>Olá, {tmpName}!</div><div style={{fontSize:14,color:"#888",marginBottom:24}}>Digite seu PIN para entrar</div><input type="password" style={{width:"100%",boxSizing:"border-box",padding:"12px 16px",borderRadius:10,border:"2px solid #e5e7eb",fontSize:15,marginBottom:16,outline:"none",color:"#222",textAlign:"center",letterSpacing:4}} placeholder="••••" value={tmpPin} onChange={e=>setTmpPin(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handlePinEnter()} autoFocus/>{toast&&<div style={{marginBottom:12,padding:"8px",background:"#FEE2E2",color:"#EF4444",borderRadius:8,fontSize:13}}>{toast.msg}</div>}<button style={{width:"100%",padding:"12px",borderRadius:10,border:"none",background:"linear-gradient(135deg,#7C3AED,#4F46E5)",color:"#fff",fontSize:15,fontWeight:600,cursor:"pointer",marginBottom:10}} onClick={handlePinEnter}>Entrar</button><button style={{background:"none",border:"none",color:"#aaa",fontSize:13,cursor:"pointer"}} onClick={()=>{setAuthStep("name");setTmpPin("");}}>← Voltar</button></div></div>);}
@@ -287,12 +292,12 @@ export default function App(){
   const now2=new Date();const tMonth=now2.getMonth()+1;const tYear=now2.getFullYear();
   const histFilters={"Hoje":h=>h.date_key===today,"Este mês":h=>{const p=h.date_key?.split("/");return p&&parseInt(p[1])===tMonth&&parseInt(p[2])===tYear;},"Este ano":h=>{const p=h.date_key?.split("/");return p&&parseInt(p[2])===tYear;}};
   const filteredHist=hist.filter(histFilters[hFilter]||histFilters["Hoje"]);
-  const normalToday=hist.filter(h=>h.date_key===today&&h.type==="normal").length;
+  const normalToday=hist.filter(h=>h.date_key===today&&(h.type==="normal"||h.type==="manual")).length;
   const totalToday=hist.filter(h=>h.date_key===today).length;
   function QCard({q}){
     const qId=q.id,pool=activePool(qId),spool=selPool(qId),nextN=pool[0]||null,last=lastMap[qId];
     const allInQ=specs.filter(c=>c.queues.includes(qId));
-    const newT=hist.filter(h=>h.queue_id===qId&&h.date_key===today&&h.type==="normal").length;
+    const newT=hist.filter(h=>h.queue_id===qId&&h.date_key===today&&(h.type==="normal"||h.type==="manual")).length;
     const single=pool.length<=1;
     return(
       <div style={{...C.card,borderTop:`4px solid ${q.color}`,padding:0,overflow:"hidden"}}>
@@ -355,13 +360,30 @@ export default function App(){
   }
   function ControleTab(){
     const wd=getWorkdays(ctrlM.y,ctrlM.m),inQ=specs.filter(c=>c.queues.includes(ctrlQ)),qInfo=QUEUES.find(q=>q.id===ctrlQ);
-    const cnt=(n,dk,t)=>hist.filter(h=>h.spec_name===n&&h.date_key===dk&&h.queue_id===ctrlQ&&h.type===t).length;
+    const isNormal=(h)=>h.type==="normal"||h.type==="manual";
+    const cnt=(n,dk,t)=>hist.filter(h=>h.spec_name===n&&h.date_key===dk&&h.queue_id===ctrlQ&&(t==="normal"?isNormal(h):h.type===t)).length;
     const cntRT=(n,dk)=>hist.filter(h=>h.spec_name===n&&h.date_key===dk&&h.queue_id===ctrlQ&&h.type==="recart_ferias").length;
-    const cntM=(n,t)=>hist.filter(h=>{if(h.spec_name!==n||h.queue_id!==ctrlQ||h.type!==t)return false;const p=h.date_key?.split("/");return p&&parseInt(p[1])===ctrlM.m+1&&parseInt(p[2])===ctrlM.y;}).length;
+    const cntM=(n,t)=>hist.filter(h=>{if(h.spec_name!==n||h.queue_id!==ctrlQ)return false;if(t==="normal"?!isNormal(h):h.type!==t)return false;const p=h.date_key?.split("/");return p&&parseInt(p[1])===ctrlM.m+1&&parseInt(p[2])===ctrlM.y;}).length;
     const cntMRT=(n)=>hist.filter(h=>{if(h.spec_name!==n||h.queue_id!==ctrlQ||h.type!=="recart_ferias")return false;const p=h.date_key?.split("/");return p&&parseInt(p[1])===ctrlM.m+1&&parseInt(p[2])===ctrlM.y;}).length;
     function buildHTML(){
-      const all=QUEUES.map(q=>{const wd2=getWorkdays(ctrlM.y,ctrlM.m),inQq=specs.filter(c=>c.queues.includes(q.id));const c2=(n,dk,t)=>hist.filter(h=>h.spec_name===n&&h.date_key===dk&&h.queue_id===q.id&&h.type===t).length;const cm2=(n,t)=>hist.filter(h=>{if(h.spec_name!==n||h.queue_id!==q.id||h.type!==t)return false;const p=h.date_key?.split("/");return p&&parseInt(p[1])===ctrlM.m+1&&parseInt(p[2])===ctrlM.y;}).length;const dH=wd2.map(d=>`<th colspan="2">${d.toLocaleDateString("pt-BR",{day:"2-digit",month:"2-digit"})}</th>`).join("");const sH=wd2.map(()=>`<th class="n">N</th><th class="i">I</th>`).join("");const rows=inQq.map(c=>{const tN=cm2(c.name,"normal"),tI=cm2(c.name,"indicacao")+cm2(c.name,"selecao");const cells=wd2.map(d=>{const dk=d.toLocaleDateString("pt-BR"),n=c2(c.name,dk,"normal"),ii=c2(c.name,dk,"indicacao")+c2(c.name,dk,"selecao");return`<td class="${n>0?"nv":"e"}">${n||"—"}</td><td class="${ii>0?"iv":"e"}">${ii||"—"}</td>`;}).join("");return`<tr><td class="name">${c.name}</td>${cells}<td class="tn">${tN||"—"}</td><td class="ti">${tI||"—"}</td></tr>`;}).join("");const tot=`<tr class="tot"><td class="name">TOTAL</td>${wd2.map(d=>{const dk=d.toLocaleDateString("pt-BR"),n=inQq.reduce((a,c)=>a+c2(c.name,dk,"normal"),0),ii=inQq.reduce((a,c)=>a+c2(c.name,dk,"indicacao")+c2(c.name,dk,"selecao"),0);return`<td class="${n>0?"nv":"e"}">${n||"—"}</td><td class="${ii>0?"iv":"e"}">${ii||"—"}</td>`;}).join("")}<td class="tn">${inQq.reduce((a,c)=>a+cm2(c.name,"normal"),0)||"—"}</td><td class="ti">${inQq.reduce((a,c)=>a+cm2(c.name,"indicacao")+cm2(c.name,"selecao"),0)||"—"}</td></tr>`;return`<h3>${q.icon} ${q.label}</h3><table><thead><tr><th rowspan="2" class="name">Especialista</th>${dH}<th colspan="2" class="tot-h">Total</th></tr><tr>${sH}<th class="n">N</th><th class="i">I</th></tr></thead><tbody>${rows}${tot}</tbody></table>`;}).join("");
-      return`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Rodízio — ${MONTHS[ctrlM.m]} ${ctrlM.y}</title><style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:Arial,sans-serif;font-size:11px;padding:20px}h1{font-size:16px;color:#7C3AED;margin-bottom:4px}p{color:#888;margin-bottom:4px}h3{font-size:13px;color:#7C3AED;margin:20px 0 6px}table{border-collapse:collapse;width:100%}th,td{border:0.5px solid #e0ddf8;padding:4px 6px;text-align:center;white-space:nowrap}th{background:#f5f3ff;color:#534AB7}.tot-h{background:#d8d4fc;color:#3C3489}.name{text-align:left;min-width:110px;font-weight:500}.n{color:#7C3AED;font-size:10px}.i{color:#F59E0B;font-size:10px}.nv{background:#EDE9FE;color:#534AB7;font-weight:500}.iv{background:#FEF3C7;color:#B45309;font-weight:500}.e{color:#ccc}.tn{background:#EDE9FE;color:#534AB7;font-weight:700}.ti{background:#FEF3C7;color:#B45309;font-weight:700}.tot td{background:#f5f3ff;font-weight:700;border-top:2px solid #C4B5F4}</style></head><body><h1>Rodízio de Especialistas</h1><p>${MONTHS[ctrlM.m]} ${ctrlM.y}</p>${all}</body></html>`;
+      const all=QUEUES.map(q=>{
+        const wd2=getWorkdays(ctrlM.y,ctrlM.m),inQq=specs.filter(c=>c.queues.includes(q.id));
+        const isN=(h)=>h.type==="normal"||h.type==="manual";
+        const c2=(n,dk,t)=>hist.filter(h=>h.spec_name===n&&h.date_key===dk&&h.queue_id===q.id&&(t==="normal"?isN(h):h.type===t)).length;
+        const c2RT=(n,dk)=>hist.filter(h=>h.spec_name===n&&h.date_key===dk&&h.queue_id===q.id&&h.type==="recart_ferias").length;
+        const cm2=(n,t)=>hist.filter(h=>{if(h.spec_name!==n||h.queue_id!==q.id)return false;if(t==="normal"?!isN(h):h.type!==t)return false;const p=h.date_key?.split("/");return p&&parseInt(p[1])===ctrlM.m+1&&parseInt(p[2])===ctrlM.y;}).length;
+        const cm2RT=(n)=>hist.filter(h=>{if(h.spec_name!==n||h.queue_id!==q.id||h.type!=="recart_ferias")return false;const p=h.date_key?.split("/");return p&&parseInt(p[1])===ctrlM.m+1&&parseInt(p[2])===ctrlM.y;}).length;
+        const dH=wd2.map(d=>`<th colspan="3">${d.toLocaleDateString("pt-BR",{day:"2-digit",month:"2-digit"})}</th>`).join("");
+        const sH=wd2.map(()=>`<th class="n">N</th><th class="i">I</th><th class="rt">RT</th>`).join("");
+        const rows=inQq.map(c=>{
+          const tN=cm2(c.name,"normal"),tI=cm2(c.name,"indicacao")+cm2(c.name,"selecao"),tRT=cm2RT(c.name);
+          const cells=wd2.map(d=>{const dk=d.toLocaleDateString("pt-BR"),n=c2(c.name,dk,"normal"),ii=c2(c.name,dk,"indicacao")+c2(c.name,dk,"selecao"),rt=c2RT(c.name,dk);return`<td class="${n>0?"nv":"e"}">${n||"—"}</td><td class="${ii>0?"iv":"e"}">${ii||"—"}</td><td class="${rt>0?"rtv":"e"}">${rt||"—"}</td>`;}).join("");
+          return`<tr><td class="name">${c.name}</td>${cells}<td class="tn">${tN||"—"}</td><td class="ti">${tI||"—"}</td><td class="trt">${tRT||"—"}</td></tr>`;
+        }).join("");
+        const tot=`<tr class="tot"><td class="name">TOTAL</td>${wd2.map(d=>{const dk=d.toLocaleDateString("pt-BR"),n=inQq.reduce((a,c)=>a+c2(c.name,dk,"normal"),0),ii=inQq.reduce((a,c)=>a+c2(c.name,dk,"indicacao")+c2(c.name,dk,"selecao"),0),rt=inQq.reduce((a,c)=>a+c2RT(c.name,dk),0);return`<td class="${n>0?"nv":"e"}">${n||"—"}</td><td class="${ii>0?"iv":"e"}">${ii||"—"}</td><td class="${rt>0?"rtv":"e"}">${rt||"—"}</td>`;}).join("")}<td class="tn">${inQq.reduce((a,c)=>a+cm2(c.name,"normal"),0)||"—"}</td><td class="ti">${inQq.reduce((a,c)=>a+cm2(c.name,"indicacao")+cm2(c.name,"selecao"),0)||"—"}</td><td class="trt">${inQq.reduce((a,c)=>a+cm2RT(c.name),0)||"—"}</td></tr>`;
+        return`<h3>${q.icon} ${q.label}</h3><table><thead><tr><th rowspan="2" class="name">Especialista</th>${dH}<th colspan="3" class="tot-h">Total</th></tr><tr>${sH}<th class="n">N</th><th class="i">I</th><th class="rt">RT</th></tr></thead><tbody>${rows}${tot}</tbody></table>`;
+      }).join("");
+      return`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Rodízio — ${MONTHS[ctrlM.m]} ${ctrlM.y}</title><style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:Arial,sans-serif;font-size:11px;padding:20px}h1{font-size:16px;color:#7C3AED;margin-bottom:4px}p{color:#888;margin-bottom:4px}h3{font-size:13px;color:#7C3AED;margin:20px 0 6px}table{border-collapse:collapse;width:100%}th,td{border:0.5px solid #e0ddf8;padding:4px 6px;text-align:center;white-space:nowrap}th{background:#f5f3ff;color:#534AB7}.tot-h{background:#d8d4fc;color:#3C3489}.name{text-align:left;min-width:110px;font-weight:500}.n{color:#7C3AED;font-size:10px}.i{color:#F59E0B;font-size:10px}.rt{color:#10B981;font-size:10px}.nv{background:#EDE9FE;color:#534AB7;font-weight:500}.iv{background:#FEF3C7;color:#B45309;font-weight:500}.rtv{background:#D1FAE5;color:#059669;font-weight:500}.e{color:#ccc}.tn{background:#EDE9FE;color:#534AB7;font-weight:700}.ti{background:#FEF3C7;color:#B45309;font-weight:700}.trt{background:#D1FAE5;color:#059669;font-weight:700}.tot td{background:#f5f3ff;font-weight:700;border-top:2px solid #C4B5F4}</style></head><body><h1>Rodízio de Especialistas</h1><p>${MONTHS[ctrlM.m]} ${ctrlM.y}</p>${all}</body></html>`;
     }
     const th={padding:"4px 6px",fontSize:11,fontWeight:600,textAlign:"center",border:"1px solid #d1d5db",background:"#f9fafb",whiteSpace:"nowrap",color:"#555"};
     const td={padding:"4px 6px",fontSize:12,textAlign:"center",border:"1px solid #e5e7eb",whiteSpace:"nowrap"};
@@ -401,12 +423,12 @@ export default function App(){
               </tr>
             </thead>
             <tbody>
-              {inQ.map((c,ri)=>{const rb=ri%2===0?"#fff":"#fafafa",tN=cntM(c.name,"normal"),tI=cntM(c.name,"indicacao")+cntM(c.name,"selecao");return(<tr key={c.id}><td style={{...td,textAlign:"left",fontWeight:600,background:rb,position:"sticky",left:0,zIndex:1}}><div style={{display:"flex",alignItems:"center",gap:6}}><div style={{width:20,height:20,borderRadius:"50%",background:qInfo.light,display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,fontWeight:700,color:qInfo.color}}>{initials(c.name)}</div>{c.name}</div></td>{wd.map(d=>{const dk=d.toLocaleDateString("pt-BR"),n=cnt(c.name,dk,"normal"),ii=cnt(c.name,dk,"indicacao")+cnt(c.name,dk,"selecao");return[<td key={dk+"n"} style={{...td,background:n>0?"#EDE9FE":rb,color:n>0?"#7C3AED":"#ddd",fontWeight:n>0?600:400}}>{n||""}</td>,<td key={dk+"i"} style={{...td,background:ii>0?"#FEF3C7":rb,color:ii>0?"#B45309":"#ddd",fontWeight:ii>0?600:400}}>{ii||""}</td>];})}<td style={{...td,fontWeight:700,background:qInfo.light,color:qInfo.color}}>{tN||""}</td><td style={{...td,fontWeight:700,background:"#FEF3C7",color:"#B45309"}}>{tI||""}</td></tr>);})}
+              {inQ.map((c,ri)=>{const rb=ri%2===0?"#fff":"#fafafa",tN=cntM(c.name,"normal"),tI=cntM(c.name,"indicacao")+cntM(c.name,"selecao"),tRT=cntMRT(c.name);return(<tr key={c.id}><td style={{...td,textAlign:"left",fontWeight:600,background:rb,position:"sticky",left:0,zIndex:1}}><div style={{display:"flex",alignItems:"center",gap:6}}><div style={{width:20,height:20,borderRadius:"50%",background:qInfo.light,display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,fontWeight:700,color:qInfo.color}}>{initials(c.name)}</div>{c.name}</div></td>{wd.map(d=>{const dk=d.toLocaleDateString("pt-BR"),n=cnt(c.name,dk,"normal"),ii=cnt(c.name,dk,"indicacao")+cnt(c.name,dk,"selecao"),rt=cntRT(c.name,dk);return[<td key={dk+"n"} style={{...td,background:n>0?"#EDE9FE":rb,color:n>0?"#7C3AED":"#ddd",fontWeight:n>0?600:400}}>{n||""}</td>,<td key={dk+"i"} style={{...td,background:ii>0?"#FEF3C7":rb,color:ii>0?"#B45309":"#ddd",fontWeight:ii>0?600:400}}>{ii||""}</td>,<td key={dk+"rt"} style={{...td,background:rt>0?"#D1FAE5":rb,color:rt>0?"#10B981":"#ddd",fontWeight:rt>0?600:400}}>{rt||""}</td>];})}<td style={{...td,fontWeight:700,background:qInfo.light,color:qInfo.color}}>{tN||""}</td><td style={{...td,fontWeight:700,background:"#FEF3C7",color:"#B45309"}}>{tI||""}</td><td style={{...td,fontWeight:700,background:"#D1FAE5",color:"#10B981"}}>{tRT||""}</td></tr>);})}
               <tr style={{borderTop:`2px solid ${qInfo.color}40`}}><td style={{...td,textAlign:"left",fontWeight:700,background:"#f9fafb",position:"sticky",left:0,zIndex:2,boxShadow:"3px 0 6px rgba(0,0,0,0.08)",minWidth:130}}>TOTAL</td>{wd.map(d=>{const dk=d.toLocaleDateString("pt-BR"),n=inQ.reduce((a,c)=>a+cnt(c.name,dk,"normal"),0),ii=inQ.reduce((a,c)=>a+cnt(c.name,dk,"indicacao")+cnt(c.name,dk,"selecao"),0),rt=inQ.reduce((a,c)=>a+cntRT(c.name,dk),0);return[<td key={dk+"tn"} style={{...tdDayFirst,fontWeight:600,background:n>0?qInfo.light:"#f9fafb",color:qInfo.color}}>{n||""}</td>,<td key={dk+"ti"} style={{...td,fontWeight:600,background:ii>0?"#FEF3C7":"#f9fafb",color:"#B45309"}}>{ii||""}</td>,<td key={dk+"trt"} style={{...td,fontWeight:600,background:rt>0?"#D1FAE5":"#f9fafb",color:"#10B981"}}>{rt||""}</td>];})}<td style={{...tdDayFirst,fontWeight:700,background:qInfo.light,color:qInfo.color}}>{inQ.reduce((a,c)=>a+cntM(c.name,"normal"),0)||""}</td><td style={{...td,fontWeight:700,background:"#FEF3C7",color:"#B45309"}}>{inQ.reduce((a,c)=>a+cntM(c.name,"indicacao")+cntM(c.name,"selecao"),0)||""}</td><td style={{...td,fontWeight:700,background:"#D1FAE5",color:"#10B981"}}>{inQ.reduce((a,c)=>a+cntMRT(c.name),0)||""}</td></tr>
             </tbody>
           </table>
         </div>
-        <div style={{marginTop:8,fontSize:12,color:"#888"}}>N = rodízio normal · I = indicações + seleção · RT = recarteirização temporária</div>
+        <div style={{marginTop:8,fontSize:12,color:"#888"}}>N = rodízio normal + avulso · I = indicações + seleção · RT = recarteirização temporária</div>
       </div>
     );
   }
@@ -613,7 +635,7 @@ export default function App(){
         {QUEUES.map(q=>{
           const inQ=[...specs.filter(c=>c.queues.includes(q.id))].sort((a,b)=>a.name.localeCompare(b.name,"pt"));
           if(!inQ.length)return null;
-          const firstToday=hist.filter(h=>h.queue_id===q.id&&h.date_key===today&&h.type==="normal").sort((a,b)=>new Date(a.created_at)-new Date(b.created_at))[0];
+          const firstToday=hist.filter(h=>h.queue_id===q.id&&h.date_key===today&&(h.type==="normal"||h.type==="manual")).sort((a,b)=>new Date(a.created_at)-new Date(b.created_at))[0];
           const totalSetor=inQ.reduce((acc,c)=>acc+(c.counts?.[q.id]||0)+(c.ind?.[q.id]||0),0);
           return(
             <div key={q.id} style={{...C.card,padding:0,overflow:"hidden",marginBottom:14}}>
