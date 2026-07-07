@@ -168,7 +168,7 @@ export default function App(){
   function showToast(msg,type="success"){setToast({msg,type});setTimeout(()=>setToast(null),2800);}
   const today=todayKey();
   const todayISOStr=todayISO();
-  function countsOf(c,qId){return(c.counts?.[qId]||0)+(c.ind?.[qId]||0);}
+  function countsOf(c,qId){return(c.counts?.[qId]||0)+(c.ind?.[qId]||0)+(c.rotation_carry?.[qId]||0);}
   function orderScore(c,qId){return countsOf(c,qId)*10000+c.name.charCodeAt(0);}
   function activePool(qId){return specs.filter(c=>!c.removed_at&&c.status==="active"&&c.queues.includes(qId)).sort((a,b)=>orderScore(a,qId)-orderScore(b,qId)||a.name.localeCompare(b.name,"pt"));}
   function selPool(qId){return specs.filter(c=>!c.removed_at&&c.status==="active"&&c.queues.includes(qId)&&c.selecao).sort((a,b)=>orderScore(a,qId)-orderScore(b,qId)||a.name.localeCompare(b.name,"pt"));}
@@ -264,7 +264,7 @@ export default function App(){
     showToast("Registro removido!");
   }
   async function addSpec(){if(!newC.name.trim())return;try{await sb("specialists","POST",{...newC,counts:{},ind:{},selecao:false});setNewC({name:"",queues:[],status:"active",note:""});setAddForm(false);showToast("Adicionado!");const sp=await sb("specialists?order=name");if(sp?.length)setSpecs(sp);}catch{showToast("Erro.","error");}}
-  async function iniciarNovoDia(){
+ async function iniciarNovoDia(){
     if(!confirm("Iniciar novo dia?"))return;
     const y=new Date();y.setDate(y.getDate()-1);
     const yKey=y.toLocaleDateString("pt-BR");
@@ -272,8 +272,29 @@ export default function App(){
     const summary=QUEUES.map(q=>{const e=hist.filter(h=>h.date_key===yKey&&h.queue_id===q.id);return{queue:q.label,normal:e.filter(h=>h.type==="normal"||h.type==="manual").length,ind:e.filter(h=>h.type==="indicacao"||h.type==="selecao").length,total:e.length};}).filter(s=>s.total>0);
     try{
       await sb("day_closings","POST",{closed_date:yKey,closed_label:yLabel,closed_by:userName,summary,total_normal:summary.reduce((a,s)=>a+s.normal,0),total_ind:summary.reduce((a,s)=>a+s.ind,0)});
-      const allSpecs=await sb("specialists?select=id");
-      if(allSpecs?.length)await Promise.all(allSpecs.map(s=>sb(`specialists?id=eq.${s.id}`,"PATCH",{counts:{},ind:{}})));
+      const currentSpecs=await sb("specialists?select=id,name,queues,removed_at,status,counts,ind,rotation_carry");
+      const carryPerQueue={};
+      QUEUES.forEach(q=>{
+        const inQ=(currentSpecs||[]).filter(c=>!c.removed_at&&c.status==="active"&&c.queues?.includes(q.id));
+        if(inQ.length===0)return;
+        const totals=inQ.map(c=>(c.counts?.[q.id]||0)+(c.ind?.[q.id]||0)+(c.rotation_carry?.[q.id]||0));
+        const minT=Math.min(...totals);
+        carryPerQueue[q.id]={};
+        inQ.forEach(c=>{
+          const cur=(c.counts?.[q.id]||0)+(c.ind?.[q.id]||0)+(c.rotation_carry?.[q.id]||0);
+          carryPerQueue[q.id][c.name]=cur-minT;
+        });
+      });
+      if(currentSpecs?.length){
+        await Promise.all(currentSpecs.map(s=>{
+          const newCarry={};
+          (s.queues||[]).forEach(q=>{
+            const c=carryPerQueue[q]?.[s.name];
+            if(c!==undefined&&c>0)newCarry[q]=c;
+          });
+          return sb(`specialists?id=eq.${s.id}`,"PATCH",{counts:{},ind:{},rotation_carry:newCarry});
+        }));
+      }
       await sb("last_assigned","DELETE");
       setLastMap({});
       showToast("Novo dia iniciado!");
