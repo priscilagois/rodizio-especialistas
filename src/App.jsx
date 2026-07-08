@@ -264,7 +264,7 @@ export default function App(){
     showToast("Registro removido!");
   }
   async function addSpec(){if(!newC.name.trim())return;try{await sb("specialists","POST",{...newC,counts:{},ind:{},selecao:false});setNewC({name:"",queues:[],status:"active",note:""});setAddForm(false);showToast("Adicionado!");const sp=await sb("specialists?order=name");if(sp?.length)setSpecs(sp);}catch{showToast("Erro.","error");}}
- async function iniciarNovoDia(){
+async function iniciarNovoDia(){
     if(!confirm("Iniciar novo dia?"))return;
     const y=new Date();y.setDate(y.getDate()-1);
     const yKey=y.toLocaleDateString("pt-BR");
@@ -277,12 +277,14 @@ export default function App(){
       QUEUES.forEach(q=>{
         const inQ=(currentSpecs||[]).filter(c=>!c.removed_at&&c.status==="active"&&c.queues?.includes(q.id));
         if(inQ.length===0)return;
-        const totals=inQ.map(c=>(c.counts?.[q.id]||0)+(c.ind?.[q.id]||0)+(c.rotation_carry?.[q.id]||0));
-        const minT=Math.min(...totals);
+        const totals=inQ.map(c=>({name:c.name,total:(c.counts?.[q.id]||0)+(c.ind?.[q.id]||0)}));
+        const minT=Math.min(...totals.map(t=>t.total));
+        const startName=totals.filter(t=>t.total===minT).map(t=>t.name).sort((a,b)=>a.localeCompare(b,"pt"))[0];
+        if(!startName)return;
         carryPerQueue[q.id]={};
         inQ.forEach(c=>{
-          const cur=(c.counts?.[q.id]||0)+(c.ind?.[q.id]||0)+(c.rotation_carry?.[q.id]||0);
-          carryPerQueue[q.id][c.name]=cur-minT;
+          const cmp=c.name.localeCompare(startName,"pt");
+          carryPerQueue[q.id][c.name]=(cmp>=0)?0:1;
         });
       });
       if(currentSpecs?.length){
